@@ -98,8 +98,13 @@ app.listen(PORT, () => {
   logger.info(`📚 API documentation: ${process.env.APP_BASE_URL}/api/docs`);
   logger.info(`🏥 Health check: ${process.env.APP_BASE_URL}/health`);
 
-  // Start scheduler service
-  schedulerService.start();
+  // Start scheduler service only if Firebase is available
+  try {
+    schedulerService.start();
+  } catch (error) {
+    logger.warn('⚠️ Scheduler service not started - Firebase not available:', error.message);
+    logger.info('💡 The server will run without background tasks. Configure Firebase to enable full functionality.');
+  }
 });
 
 // Graceful shutdown

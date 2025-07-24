@@ -6,8 +6,17 @@ let db = null;
 const initializeFirebase = () => {
   try {
     if (admin.apps.length === 0) {
+      // Debug: Log what Firebase environment variables we have
+      logger.debug('Firebase environment check:', {
+        hasServiceAccountJson: !!process.env.FIREBASE_SERVICE_ACCOUNT_JSON,
+        hasProjectId: !!process.env.FIREBASE_PROJECT_ID,
+        hasPrivateKey: !!process.env.FIREBASE_PRIVATE_KEY,
+        hasClientEmail: !!process.env.FIREBASE_CLIENT_EMAIL,
+        nodeEnv: process.env.NODE_ENV
+      });
+
       // Skip Firebase initialization if no config is provided (test or development without Firebase)
-      if (!process.env.FIREBASE_PROJECT_ID) {
+      if (!process.env.FIREBASE_SERVICE_ACCOUNT_JSON && !process.env.FIREBASE_PROJECT_ID) {
         const env = process.env.NODE_ENV || 'development';
         logger.info(`⚠️ Skipping Firebase initialization in ${env} environment - no Firebase credentials provided`);
         logger.info('💡 To use Firebase, copy .env.example to .env and add your Firebase credentials');
