@@ -1,0 +1,45 @@
+{
+  "name": "tenantsphere-lite",
+  "version": "1.0.0",
+  "description": "WhatsApp-First Rental System for Buea",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "build": "echo 'No build step required'"
+  },
+  "keywords": [
+    "whatsapp",
+    "rental",
+    "real-estate",
+    "bot",
+    "buea",
+    "cameroon"
+  ],
+  "author": "Tenantsphere Team",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "dotenv": "^16.3.1",
+    "axios": "^1.6.0",
+    "firebase-admin": "^11.11.0",
+    "multer": "^1.4.5-lts.1",
+    "cors": "^2.8.5",
+    "helmet": "^7.1.0",
+    "morgan": "^1.10.0",
+    "joi": "^17.11.0",
+    "uuid": "^9.0.1",
+    "moment": "^2.29.4"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1",
+    "jest": "^29.7.0",
+    "supertest": "^6.3.3",
+    "@types/jest": "^29.5.8"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
