@@ -14,6 +14,26 @@ const initializeFirebase = () => {
         return;
       }
 
+      // Check if we have a complete Firebase service account JSON
+      if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+        try {
+          const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+
+          admin.initializeApp({
+            credential: admin.credential.cert(serviceAccount),
+            projectId: serviceAccount.project_id
+          });
+
+          db = admin.firestore();
+          db.settings({ timestampsInSnapshots: true });
+
+          logger.info('✅ Firebase initialized successfully with service account JSON');
+          return;
+        } catch (error) {
+          logger.error('❌ Failed to parse FIREBASE_SERVICE_ACCOUNT_JSON:', error.message);
+        }
+      }
+
       // Validate required environment variables
       const requiredVars = ['FIREBASE_PROJECT_ID', 'FIREBASE_PRIVATE_KEY', 'FIREBASE_CLIENT_EMAIL'];
       const missingVars = requiredVars.filter(varName => !process.env[varName]);
