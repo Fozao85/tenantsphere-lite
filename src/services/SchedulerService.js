@@ -4,10 +4,20 @@ const { logger } = require('../utils/logger');
 
 class SchedulerService {
   constructor() {
-    this.notificationService = new NotificationService();
-    this.conversationService = new ConversationService();
+    this.notificationService = null;
+    this.conversationService = null;
     this.intervals = new Map();
     this.isRunning = false;
+  }
+
+  // Initialize services when needed
+  initializeServices() {
+    if (!this.notificationService) {
+      this.notificationService = new NotificationService();
+    }
+    if (!this.conversationService) {
+      this.conversationService = new ConversationService();
+    }
   }
 
   // Start the scheduler
@@ -16,6 +26,9 @@ class SchedulerService {
       logger.warn('Scheduler is already running');
       return;
     }
+
+    // Initialize services
+    this.initializeServices();
 
     this.isRunning = true;
     logger.info('🕐 Starting scheduler service');
@@ -85,6 +98,7 @@ class SchedulerService {
   // Process pending notifications
   async processNotifications() {
     try {
+      this.initializeServices();
       const processed = await this.notificationService.processNotificationQueue();
       
       if (processed > 0) {
@@ -101,6 +115,7 @@ class SchedulerService {
   // Retry failed notifications
   async retryFailedNotifications() {
     try {
+      this.initializeServices();
       const retried = await this.notificationService.retryFailedNotifications();
       
       if (retried > 0) {
@@ -117,6 +132,7 @@ class SchedulerService {
   // Clean up stale conversations
   async cleanupStaleConversations() {
     try {
+      this.initializeServices();
       const staleConversations = await this.conversationService.getStaleConversations(24);
       
       for (const conversation of staleConversations) {
@@ -138,6 +154,8 @@ class SchedulerService {
   async performDailyCleanup() {
     try {
       logger.info('🧹 Starting daily cleanup tasks');
+
+      this.initializeServices();
 
       // Clean up old notifications (30 days)
       const cleanedNotifications = await this.notificationService.cleanupOldNotifications(30);
@@ -162,6 +180,8 @@ class SchedulerService {
   // Schedule a one-time notification
   async scheduleNotification(notificationData, delayMinutes = 0) {
     try {
+      this.initializeServices();
+
       const scheduledFor = new Date();
       scheduledFor.setMinutes(scheduledFor.getMinutes() + delayMinutes);
 
