@@ -18,7 +18,7 @@ class User {
     };
     this.bookings = data.bookings || [];
     this.viewedProperties = data.viewedProperties || [];
-    this.lastInteraction = data.lastInteraction;
+    this.lastInteraction = data.lastInteraction || new Date();
     this.conversationState = data.conversationState || 'idle';
     this.language = data.language || 'en';
     this.createdAt = data.createdAt || new Date();
