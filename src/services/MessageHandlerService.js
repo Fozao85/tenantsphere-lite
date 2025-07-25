@@ -115,6 +115,32 @@ class MessageHandlerService {
     }
   }
 
+  // Handle welcome flow
+  async handleWelcomeFlow(user, conversation, messageText, from) {
+    await this.sendWelcomeMessage(user, from);
+  }
+
+  // Handle property search flow
+  async handlePropertySearchFlow(user, conversation, messageText, from) {
+    await this.startPropertySearch(user, conversation, from);
+  }
+
+  // Handle booking flow
+  async handleBookingFlow(user, conversation, messageText, from) {
+    await this.showUserBookings(user, from);
+  }
+
+  // Handle preferences flow
+  async handlePreferencesFlow(user, conversation, messageText, from) {
+    await this.startPreferencesSetup(user, conversation, from);
+  }
+
+  // Handle default flow
+  async handleDefaultFlow(user, conversation, messageText, from) {
+    // For any unrecognized flow, show the main menu
+    await this.sendMainMenu(user, from);
+  }
+
   // Handle interactive messages (buttons, lists)
   async handleInteractiveMessage(user, conversation, messageData) {
     const interactive = messageData.interactive;
