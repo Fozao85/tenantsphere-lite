@@ -3,6 +3,8 @@ const UserService = require('./UserService');
 const ConversationService = require('./ConversationService');
 const PropertyService = require('./PropertyService');
 const PropertySearchService = require('./PropertySearchService');
+const PropertyDisplayService = require('./PropertyDisplayService');
+const PropertyActionService = require('./PropertyActionService');
 const NLPService = require('./NLPService');
 const { logger } = require('../utils/logger');
 
@@ -13,6 +15,8 @@ class MessageHandlerService {
     this.conversationService = new ConversationService();
     this.propertyService = new PropertyService();
     this.propertySearchService = new PropertySearchService();
+    this.propertyDisplayService = new PropertyDisplayService();
+    this.propertyActionService = new PropertyActionService();
     this.nlpService = new NLPService();
   }
 
@@ -243,6 +247,93 @@ class MessageHandlerService {
     }
   }
 
+  // Handle button responses (interactive button clicks)
+  async handleButtonResponse(user, conversation, buttonId, from) {
+    try {
+      logger.info(`Handling button response: ${buttonId} from ${from}`);
+
+      // Check if it's a property action (view_, book_, contact_, save_, etc.)
+      if (this.isPropertyAction(buttonId)) {
+        await this.propertyActionService.handlePropertyAction(buttonId, user, conversation, from);
+        return;
+      }
+
+      // Handle other button actions
+      switch (buttonId) {
+        // Search and browsing actions
+        case 'smart_search':
+          await this.startSmartSearch(user, conversation, from);
+          break;
+        case 'browse_featured':
+          await this.showFeaturedProperties(user, conversation, from);
+          break;
+        case 'filter_search':
+          await this.startAdvancedFilters(user, conversation, from);
+          break;
+
+        // Result navigation
+        case 'show_more_results':
+          await this.showMoreResults(user, conversation, from);
+          break;
+        case 'browse_carousel':
+          await this.startPropertyCarousel(user, conversation, from);
+          break;
+        case 'compare_properties':
+          await this.startPropertyComparison(user, conversation, from);
+          break;
+
+        // User actions
+        case 'new_search':
+          await this.startPropertySearch(user, conversation, from);
+          break;
+        case 'save_search':
+          await this.saveCurrentSearch(user, conversation, from);
+          break;
+        case 'refine_search':
+          await this.startPropertySearch(user, conversation, from);
+          break;
+        case 'contact_agent':
+          await this.contactAgent(user, conversation, from);
+          break;
+
+        // Navigation actions
+        case 'main_menu':
+          await this.sendMainMenu(user, from);
+          break;
+        case 'continue_browsing':
+          await this.startPropertySearch(user, conversation, from);
+          break;
+        case 'view_saved_properties':
+          await this.showSavedProperties(user, conversation, from);
+          break;
+
+        // Carousel navigation
+        case buttonId.startsWith('next_') ? buttonId : null:
+          await this.handleCarouselNavigation(user, conversation, buttonId, from);
+          break;
+        case buttonId.startsWith('prev_') ? buttonId : null:
+          await this.handleCarouselNavigation(user, conversation, buttonId, from);
+          break;
+
+        default:
+          await this.whatsapp.sendTextMessage(from, "I didn't understand that action. Please try again or use the main menu.");
+          await this.sendMainMenu(user, from);
+      }
+
+    } catch (error) {
+      logger.error('Error handling button response:', error);
+      await this.whatsapp.sendTextMessage(from,
+        "Sorry, I encountered an error processing your action. Please try again."
+      );
+    }
+  }
+
+  // Check if button ID is a property action
+  isPropertyAction(buttonId) {
+    const propertyActions = ['view_', 'book_', 'contact_', 'save_', 'share_', 'gallery_', 'details_'];
+    return propertyActions.some(action => buttonId.startsWith(action));
+  }
+
   // Handle common commands
   async handleCommonCommands(user, conversation, messageText, from) {
     const commands = {
@@ -449,7 +540,7 @@ What would you like to do?`;
     await this.whatsapp.sendButtonMessage(from, message, buttons);
   }
 
-  // Send property search results
+  // Send property search results with enhanced display
   async sendPropertyResults(user, conversation, properties, from) {
     try {
       const resultCount = properties.length;
@@ -457,47 +548,49 @@ What would you like to do?`;
 
       await this.whatsapp.sendTextMessage(from, headerMessage);
 
-      // Send top 3 properties as detailed cards
+      // Send top 3 properties using enhanced display service
       const topProperties = properties.slice(0, 3);
 
       for (let i = 0; i < topProperties.length; i++) {
         const property = topProperties[i];
-        await this.sendPropertyCard(property, from, i + 1);
+        await this.propertyDisplayService.sendDetailedPropertyCard(property, from, i + 1);
 
         // Small delay between messages to avoid rate limiting
         if (i < topProperties.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          await new Promise(resolve => setTimeout(resolve, 2000));
         }
       }
 
-      // If there are more properties, offer to show them
+      // If there are more properties, offer browsing options
       if (properties.length > 3) {
-        const moreMessage = `📋 I found ${properties.length - 3} more properties. Would you like to see them?`;
+        const moreMessage = `📋 I found ${properties.length - 3} more properties. How would you like to continue?`;
 
         const buttons = [
           { id: 'show_more_results', title: '📋 Show More' },
-          { id: 'refine_search', title: '🔍 Refine Search' },
-          { id: 'contact_agent', title: '👨‍💼 Contact Agent' }
+          { id: 'browse_carousel', title: '🎠 Browse Carousel' },
+          { id: 'compare_properties', title: '🔍 Compare Properties' }
         ];
 
         await this.whatsapp.sendButtonMessage(from, moreMessage, buttons);
       } else {
-        // Show action buttons for the results
-        const actionMessage = `What would you like to do next?`;
+        // Show enhanced action options
+        const actionMessage = `🎯 *What would you like to do next?*`;
 
         const buttons = [
           { id: 'new_search', title: '🔍 New Search' },
           { id: 'save_search', title: '💾 Save Search' },
-          { id: 'contact_agent', title: '👨‍💼 Contact Agent' }
+          { id: 'browse_featured', title: '⭐ Featured Properties' }
         ];
 
         await this.whatsapp.sendButtonMessage(from, actionMessage, buttons);
       }
 
-      // Update conversation state
+      // Update conversation state with enhanced data
       await this.conversationService.updateConversation(conversation.id, {
         currentStep: 'viewing_results',
         lastSearchResults: properties.map(p => p.id),
+        currentResultIndex: 3,
+        totalResults: properties.length,
         lastActivity: new Date()
       });
 
@@ -509,61 +602,7 @@ What would you like to do?`;
     }
   }
 
-  // Send individual property card
-  async sendPropertyCard(property, from, index) {
-    try {
-      // Format property details
-      const title = `${index}. ${property.title || `${property.type} in ${property.location}`}`;
 
-      let message = `🏠 *${title}*\n\n`;
-      message += `📍 *Location:* ${property.location}\n`;
-      message += `💰 *Price:* ${this.formatPrice(property.price)} FCFA/month\n`;
-
-      if (property.bedrooms) {
-        message += `🛏️ *Bedrooms:* ${property.bedrooms}\n`;
-      }
-
-      if (property.bathrooms) {
-        message += `🚿 *Bathrooms:* ${property.bathrooms}\n`;
-      }
-
-      if (property.amenities && property.amenities.length > 0) {
-        message += `✨ *Amenities:* ${property.amenities.slice(0, 3).join(', ')}`;
-        if (property.amenities.length > 3) {
-          message += ` +${property.amenities.length - 3} more`;
-        }
-        message += `\n`;
-      }
-
-      if (property.description) {
-        const shortDesc = property.description.length > 100
-          ? property.description.substring(0, 100) + '...'
-          : property.description;
-        message += `\n📝 ${shortDesc}\n`;
-      }
-
-      // Add action buttons for this property
-      const buttons = [
-        { id: `view_${property.id}`, title: '👁️ View Details' },
-        { id: `book_${property.id}`, title: '📅 Book Tour' },
-        { id: `contact_${property.id}`, title: '📞 Contact' }
-      ];
-
-      // Send property image if available
-      if (property.images && property.images.length > 0) {
-        await this.whatsapp.sendImageMessage(from, property.images[0], message);
-        await this.whatsapp.sendButtonMessage(from, "What would you like to do?", buttons);
-      } else {
-        await this.whatsapp.sendButtonMessage(from, message, buttons);
-      }
-
-    } catch (error) {
-      logger.error('Error sending property card:', error);
-      // Fallback to simple text message
-      const simpleMessage = `🏠 ${property.title || property.type} in ${property.location} - ${this.formatPrice(property.price)} FCFA/month`;
-      await this.whatsapp.sendTextMessage(from, simpleMessage);
-    }
-  }
 
   // Format price with proper comma separation
   formatPrice(price) {
@@ -958,6 +997,196 @@ Would you like me to:`;
   async handleUnsupportedMessage(user, conversation, messageData) {
     const supportedTypes = "I can understand text messages, buttons, images, and locations. Please try sending a text message or use the menu options.";
     await this.whatsapp.sendTextMessage(messageData.from, supportedTypes);
+  }
+
+  // Start property carousel browsing
+  async startPropertyCarousel(user, conversation, from) {
+    try {
+      const lastSearchResults = conversation.lastSearchResults || [];
+
+      if (lastSearchResults.length === 0) {
+        await this.whatsapp.sendTextMessage(from, "No properties to browse. Let's start a new search!");
+        await this.startPropertySearch(user, conversation, from);
+        return;
+      }
+
+      await this.whatsapp.sendTextMessage(from, "🎠 Starting carousel browsing...");
+
+      // Get properties for carousel
+      const properties = [];
+      for (const propertyId of lastSearchResults.slice(0, 10)) {
+        try {
+          const property = await this.propertyService.getPropertyById(propertyId);
+          if (property) properties.push(property);
+        } catch (error) {
+          logger.warn(`Could not load property ${propertyId} for carousel`);
+        }
+      }
+
+      if (properties.length === 0) {
+        await this.whatsapp.sendTextMessage(from, "Properties are no longer available. Let's start a new search!");
+        await this.startPropertySearch(user, conversation, from);
+        return;
+      }
+
+      // Start carousel at index 0
+      await this.propertyDisplayService.sendPropertyCarousel(properties, 0, from);
+
+      // Update conversation state
+      await this.conversationService.updateConversation(conversation.id, {
+        currentStep: 'browsing_carousel',
+        carouselProperties: properties.map(p => p.id),
+        carouselIndex: 0,
+        lastActivity: new Date()
+      });
+
+    } catch (error) {
+      logger.error('Error starting property carousel:', error);
+      await this.whatsapp.sendTextMessage(from, "Sorry, I couldn't start the carousel. Let's try a regular search instead.");
+      await this.startPropertySearch(user, conversation, from);
+    }
+  }
+
+  // Start property comparison
+  async startPropertyComparison(user, conversation, from) {
+    try {
+      const lastSearchResults = conversation.lastSearchResults || [];
+
+      if (lastSearchResults.length < 2) {
+        await this.whatsapp.sendTextMessage(from, "Need at least 2 properties to compare. Let's search for more properties first!");
+        await this.startPropertySearch(user, conversation, from);
+        return;
+      }
+
+      // Get top 3 properties for comparison
+      const properties = [];
+      for (const propertyId of lastSearchResults.slice(0, 3)) {
+        try {
+          const property = await this.propertyService.getPropertyById(propertyId);
+          if (property) properties.push(property);
+        } catch (error) {
+          logger.warn(`Could not load property ${propertyId} for comparison`);
+        }
+      }
+
+      if (properties.length < 2) {
+        await this.whatsapp.sendTextMessage(from, "Not enough properties available for comparison. Let's search for more!");
+        await this.startPropertySearch(user, conversation, from);
+        return;
+      }
+
+      await this.propertyDisplayService.sendPropertyComparison(properties, from);
+
+    } catch (error) {
+      logger.error('Error starting property comparison:', error);
+      await this.whatsapp.sendTextMessage(from, "Sorry, I couldn't compare the properties. Please try again.");
+    }
+  }
+
+  // Handle carousel navigation
+  async handleCarouselNavigation(user, conversation, buttonId, from) {
+    try {
+      const [action, indexStr] = buttonId.split('_');
+      const currentIndex = parseInt(indexStr);
+      const carouselProperties = conversation.carouselProperties || [];
+
+      if (carouselProperties.length === 0) {
+        await this.whatsapp.sendTextMessage(from, "No properties in carousel. Let's start a new search!");
+        await this.startPropertySearch(user, conversation, from);
+        return;
+      }
+
+      let newIndex;
+      if (action === 'next') {
+        newIndex = Math.min(currentIndex + 1, carouselProperties.length - 1);
+      } else if (action === 'prev') {
+        newIndex = Math.max(currentIndex - 1, 0);
+      } else {
+        return;
+      }
+
+      // Get properties for carousel display
+      const properties = [];
+      for (const propertyId of carouselProperties) {
+        try {
+          const property = await this.propertyService.getPropertyById(propertyId);
+          if (property) properties.push(property);
+        } catch (error) {
+          logger.warn(`Could not load property ${propertyId} for carousel navigation`);
+        }
+      }
+
+      if (properties.length === 0) {
+        await this.whatsapp.sendTextMessage(from, "Properties are no longer available. Let's start a new search!");
+        await this.startPropertySearch(user, conversation, from);
+        return;
+      }
+
+      // Send updated carousel
+      await this.propertyDisplayService.sendPropertyCarousel(properties, newIndex, from);
+
+      // Update conversation state
+      await this.conversationService.updateConversation(conversation.id, {
+        carouselIndex: newIndex,
+        lastActivity: new Date()
+      });
+
+    } catch (error) {
+      logger.error('Error handling carousel navigation:', error);
+      await this.whatsapp.sendTextMessage(from, "Sorry, I couldn't navigate the carousel. Please try again.");
+    }
+  }
+
+  // Show saved properties
+  async showSavedProperties(user, conversation, from) {
+    try {
+      const savedPropertyIds = user.savedProperties || [];
+
+      if (savedPropertyIds.length === 0) {
+        await this.whatsapp.sendTextMessage(from,
+          "💾 You haven't saved any properties yet. Start browsing to save properties you like!"
+        );
+        await this.startPropertySearch(user, conversation, from);
+        return;
+      }
+
+      await this.whatsapp.sendTextMessage(from,
+        `💾 *Your Saved Properties* (${savedPropertyIds.length})\n\nHere are the properties you've saved:`
+      );
+
+      // Load and display saved properties
+      const savedProperties = [];
+      for (const propertyId of savedPropertyIds.slice(0, 5)) {
+        try {
+          const property = await this.propertyService.getPropertyById(propertyId);
+          if (property) {
+            savedProperties.push(property);
+            await this.propertyDisplayService.sendPropertyQuickView(property, from);
+            await new Promise(resolve => setTimeout(resolve, 1500));
+          }
+        } catch (error) {
+          logger.warn(`Could not load saved property ${propertyId}`);
+        }
+      }
+
+      if (savedPropertyIds.length > 5) {
+        await this.whatsapp.sendTextMessage(from,
+          `📋 Showing 5 of ${savedPropertyIds.length} saved properties. Contact us to see all your saved properties.`
+        );
+      }
+
+      const buttons = [
+        { id: 'new_search', title: '🔍 New Search' },
+        { id: 'contact_agent', title: '👨‍💼 Contact Agent' },
+        { id: 'main_menu', title: '🏠 Main Menu' }
+      ];
+
+      await this.whatsapp.sendButtonMessage(from, "What would you like to do next?", buttons);
+
+    } catch (error) {
+      logger.error('Error showing saved properties:', error);
+      await this.whatsapp.sendTextMessage(from, "Sorry, I couldn't load your saved properties. Please try again.");
+    }
   }
 }
 
