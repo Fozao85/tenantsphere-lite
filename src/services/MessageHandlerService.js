@@ -136,12 +136,16 @@ class MessageHandlerService {
 
   // Handle property search flow
   async handlePropertySearchFlow(user, conversation, messageText, from) {
-    // If user is in search flow, process their search query
-    if (conversation.currentStep === 'awaiting_search_query') {
-      await this.processSearchQuery(user, conversation, messageText, from);
-    } else {
-      // Start new search
-      await this.startPropertySearch(user, conversation, from);
+    // Route based on current step in the search flow
+    switch (conversation.currentStep) {
+      case 'awaiting_search_query':
+      case 'awaiting_smart_search':
+      case 'awaiting_advanced_search':
+        await this.processSearchQuery(user, conversation, messageText, from);
+        break;
+      default:
+        // Start new search
+        await this.startPropertySearch(user, conversation, from);
     }
   }
 
@@ -172,6 +176,70 @@ class MessageHandlerService {
     } else if (interactive.type === 'list_reply') {
       const listId = interactive.list_reply.id;
       await this.handleListResponse(user, conversation, listId, from);
+    }
+  }
+
+  // Handle list responses (menu selections)
+  async handleListResponse(user, conversation, listId, from) {
+    try {
+      logger.info(`Handling list response: ${listId} from ${from}`);
+
+      switch (listId) {
+        // Property Search Options
+        case 'search_all':
+          await this.browseAllProperties(user, conversation, from);
+          break;
+        case 'search_filtered':
+          await this.startFilteredSearch(user, conversation, from);
+          break;
+        case 'search_recommended':
+          await this.showRecommendedProperties(user, conversation, from);
+          break;
+        case 'smart_search':
+          await this.startSmartSearch(user, conversation, from);
+          break;
+        case 'browse_featured':
+          await this.showFeaturedProperties(user, conversation, from);
+          break;
+        case 'filter_search':
+          await this.startAdvancedFilters(user, conversation, from);
+          break;
+
+        // Property Actions
+        case 'show_more_results':
+          await this.showMoreResults(user, conversation, from);
+          break;
+        case 'refine_search':
+          await this.startPropertySearch(user, conversation, from);
+          break;
+        case 'contact_agent':
+          await this.contactAgent(user, conversation, from);
+          break;
+        case 'new_search':
+          await this.startPropertySearch(user, conversation, from);
+          break;
+        case 'save_search':
+          await this.saveCurrentSearch(user, conversation, from);
+          break;
+
+        // No Results Actions
+        case 'show_featured':
+          await this.showFeaturedProperties(user, conversation, from);
+          break;
+        case 'broaden_search':
+          await this.broadenSearch(user, conversation, from);
+          break;
+
+        default:
+          await this.whatsapp.sendTextMessage(from, "I didn't understand that option. Please try again or use the main menu.");
+          await this.sendMainMenu(user, from);
+      }
+
+    } catch (error) {
+      logger.error('Error handling list response:', error);
+      await this.whatsapp.sendTextMessage(from,
+        "Sorry, I encountered an error processing your selection. Please try again."
+      );
     }
   }
 
@@ -501,6 +569,327 @@ What would you like to do?`;
   formatPrice(price) {
     if (!price) return 'Price on request';
     return price.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  }
+
+  // Browse all available properties
+  async browseAllProperties(user, conversation, from) {
+    try {
+      await this.whatsapp.sendTextMessage(from, "🔍 Loading all available properties...");
+
+      // Get all available properties
+      const properties = await this.propertySearchService.searchProperties({
+        availability: true
+      }, user.preferences);
+
+      if (properties.length === 0) {
+        await this.whatsapp.sendTextMessage(from,
+          "😔 No properties are currently available. Please check back later or contact our agents."
+        );
+        return;
+      }
+
+      await this.sendPropertyResults(user, conversation, properties, from);
+
+    } catch (error) {
+      logger.error('Error browsing all properties:', error);
+      await this.whatsapp.sendTextMessage(from,
+        "Sorry, I couldn't load the properties right now. Please try again later."
+      );
+    }
+  }
+
+  // Start filtered search with criteria selection
+  async startFilteredSearch(user, conversation, from) {
+    const message = `🎯 *Filtered Search*
+
+Let's find properties that match your specific needs. You can search by:
+
+📍 Location (e.g., "Molyko", "Great Soppo")
+💰 Budget (e.g., "under 80000", "50000 to 100000")
+🏠 Property type (e.g., "apartment", "house", "studio")
+🛏️ Bedrooms (e.g., "2 bedroom", "studio")
+✨ Amenities (e.g., "parking", "generator", "furnished")
+
+*Example searches:*
+• "2 bedroom apartment in Molyko under 80000"
+• "furnished studio with parking"
+• "house in Great Soppo with generator"
+
+What are you looking for?`;
+
+    await this.whatsapp.sendTextMessage(from, message);
+
+    // Update conversation to await search query
+    await this.conversationService.updateConversation(conversation.id, {
+      currentFlow: 'property_search',
+      currentStep: 'awaiting_search_query',
+      lastActivity: new Date()
+    });
+  }
+
+  // Show recommended properties based on user preferences
+  async showRecommendedProperties(user, conversation, from) {
+    try {
+      await this.whatsapp.sendTextMessage(from, "⭐ Finding personalized recommendations...");
+
+      // Get user preferences and search history for better recommendations
+      const userPreferences = user.preferences || {};
+
+      // Build search criteria based on user preferences
+      const searchCriteria = {
+        availability: true,
+        propertyType: userPreferences.preferredPropertyTypes,
+        priceRange: userPreferences.priceRange,
+        amenities: userPreferences.preferredAmenities
+      };
+
+      const properties = await this.propertySearchService.searchProperties(searchCriteria, userPreferences);
+
+      if (properties.length === 0) {
+        await this.whatsapp.sendTextMessage(from,
+          "🤔 I don't have enough information about your preferences yet. Let's start with a search to learn what you like!"
+        );
+        await this.startFilteredSearch(user, conversation, from);
+        return;
+      }
+
+      const message = `⭐ *Recommended for You*\n\nBased on your preferences, here are properties I think you'll love:`;
+      await this.whatsapp.sendTextMessage(from, message);
+
+      await this.sendPropertyResults(user, conversation, properties, from);
+
+    } catch (error) {
+      logger.error('Error showing recommended properties:', error);
+      await this.whatsapp.sendTextMessage(from,
+        "Sorry, I couldn't load recommendations right now. Let's try a regular search instead."
+      );
+      await this.startFilteredSearch(user, conversation, from);
+    }
+  }
+
+  // Start smart search with natural language processing
+  async startSmartSearch(user, conversation, from) {
+    const message = `🤖 *Smart Search*
+
+Just tell me what you're looking for in natural language! I'll understand and find the perfect properties for you.
+
+*Examples:*
+• "I need a cheap 2 bedroom apartment in Molyko"
+• "Show me furnished studios with parking under 60000"
+• "Find me a house in Great Soppo with generator and water"
+• "I want something near UB campus under 80000"
+
+What kind of property are you looking for?`;
+
+    await this.whatsapp.sendTextMessage(from, message);
+
+    // Update conversation to await smart search query
+    await this.conversationService.updateConversation(conversation.id, {
+      currentFlow: 'property_search',
+      currentStep: 'awaiting_smart_search',
+      lastActivity: new Date()
+    });
+  }
+
+  // Show featured properties
+  async showFeaturedProperties(user, conversation, from) {
+    try {
+      await this.whatsapp.sendTextMessage(from, "⭐ Loading featured properties...");
+
+      const properties = await this.propertySearchService.getFeaturedProperties(8);
+
+      if (properties.length === 0) {
+        await this.whatsapp.sendTextMessage(from,
+          "No featured properties available right now. Let me show you our latest properties instead."
+        );
+        await this.browseAllProperties(user, conversation, from);
+        return;
+      }
+
+      const message = `⭐ *Featured Properties*\n\nHere are our top-rated and most popular properties:`;
+      await this.whatsapp.sendTextMessage(from, message);
+
+      await this.sendPropertyResults(user, conversation, properties, from);
+
+    } catch (error) {
+      logger.error('Error showing featured properties:', error);
+      await this.whatsapp.sendTextMessage(from,
+        "Sorry, I couldn't load featured properties. Let me show you all available properties instead."
+      );
+      await this.browseAllProperties(user, conversation, from);
+    }
+  }
+
+  // Start advanced filters
+  async startAdvancedFilters(user, conversation, from) {
+    const message = `🔧 *Advanced Filters*
+
+Let's set up detailed search criteria:
+
+1️⃣ **Location**: Which area interests you?
+2️⃣ **Budget**: What's your price range?
+3️⃣ **Property Type**: Apartment, house, studio?
+4️⃣ **Bedrooms**: How many bedrooms?
+5️⃣ **Amenities**: What features do you need?
+
+You can specify multiple criteria like:
+"2-3 bedroom apartment in Molyko or Great Soppo, 60000-100000 FCFA, with parking and generator"
+
+What are your search criteria?`;
+
+    await this.whatsapp.sendTextMessage(from, message);
+
+    // Update conversation to await advanced search query
+    await this.conversationService.updateConversation(conversation.id, {
+      currentFlow: 'property_search',
+      currentStep: 'awaiting_advanced_search',
+      lastActivity: new Date()
+    });
+  }
+
+  // Show more results from previous search
+  async showMoreResults(user, conversation, from) {
+    try {
+      // Get previous search results from conversation context
+      const lastSearchResults = conversation.lastSearchResults || [];
+
+      if (lastSearchResults.length === 0) {
+        await this.whatsapp.sendTextMessage(from,
+          "No previous search results found. Let's start a new search!"
+        );
+        await this.startPropertySearch(user, conversation, from);
+        return;
+      }
+
+      // Get the next batch of properties
+      const startIndex = conversation.currentResultIndex || 3;
+      const endIndex = Math.min(startIndex + 3, lastSearchResults.length);
+
+      if (startIndex >= lastSearchResults.length) {
+        await this.whatsapp.sendTextMessage(from,
+          "You've seen all the results! Would you like to start a new search?"
+        );
+
+        const buttons = [
+          { id: 'new_search', title: '🔍 New Search' },
+          { id: 'refine_search', title: '🎯 Refine Search' },
+          { id: 'main_menu', title: '🏠 Main Menu' }
+        ];
+
+        await this.whatsapp.sendButtonMessage(from, "What would you like to do?", buttons);
+        return;
+      }
+
+      // Get property details for the next batch
+      const moreProperties = [];
+      for (let i = startIndex; i < endIndex; i++) {
+        try {
+          const property = await this.propertyService.getPropertyById(lastSearchResults[i]);
+          if (property) {
+            moreProperties.push(property);
+          }
+        } catch (error) {
+          logger.warn(`Could not load property ${lastSearchResults[i]}:`, error.message);
+        }
+      }
+
+      if (moreProperties.length === 0) {
+        await this.whatsapp.sendTextMessage(from,
+          "No more properties to show. Let's start a new search!"
+        );
+        await this.startPropertySearch(user, conversation, from);
+        return;
+      }
+
+      await this.whatsapp.sendTextMessage(from,
+        `📋 Showing ${moreProperties.length} more properties (${endIndex} of ${lastSearchResults.length}):`
+      );
+
+      await this.sendPropertyResults(user, conversation, moreProperties, from);
+
+      // Update current result index
+      await this.conversationService.updateConversation(conversation.id, {
+        currentResultIndex: endIndex,
+        lastActivity: new Date()
+      });
+
+    } catch (error) {
+      logger.error('Error showing more results:', error);
+      await this.whatsapp.sendTextMessage(from,
+        "Sorry, I couldn't load more results. Let's start a new search."
+      );
+      await this.startPropertySearch(user, conversation, from);
+    }
+  }
+
+  // Contact agent
+  async contactAgent(user, conversation, from) {
+    const message = `👨‍💼 *Contact Our Agents*
+
+Our experienced agents are ready to help you find the perfect property!
+
+📞 **Phone**: +237 XXX XXX XXX
+📧 **Email**: agents@tenantsphere.com
+💬 **WhatsApp**: This number
+🕒 **Hours**: Monday - Saturday, 8AM - 6PM
+
+You can also tell me what you're looking for and I'll make sure our agents get your requirements!
+
+What would you like to do?`;
+
+    const buttons = [
+      { id: 'send_requirements', title: '📝 Send Requirements' },
+      { id: 'schedule_call', title: '📞 Schedule Call' },
+      { id: 'main_menu', title: '🏠 Main Menu' }
+    ];
+
+    await this.whatsapp.sendButtonMessage(from, message, buttons);
+  }
+
+  // Save current search
+  async saveCurrentSearch(user, conversation, from) {
+    try {
+      // Implementation for saving search preferences
+      await this.whatsapp.sendTextMessage(from,
+        "💾 Search saved! I'll remember your preferences for future recommendations."
+      );
+
+      // Update user preferences based on current search
+      if (conversation.lastSearchCriteria) {
+        await this.userService.updateUserPreferences(user.id, conversation.lastSearchCriteria);
+      }
+
+      await this.sendMainMenu(user, from);
+
+    } catch (error) {
+      logger.error('Error saving search:', error);
+      await this.whatsapp.sendTextMessage(from,
+        "Sorry, I couldn't save your search right now. Your preferences are still remembered for this session."
+      );
+    }
+  }
+
+  // Broaden search criteria
+  async broadenSearch(user, conversation, from) {
+    const message = `🔍 *Broaden Your Search*
+
+Let's try with more flexible criteria:
+
+• **Expand location**: Include nearby areas
+• **Increase budget**: Consider slightly higher prices
+• **Different property types**: Look at apartments, houses, and studios
+• **Flexible amenities**: Focus on essential features only
+
+Would you like me to:`;
+
+    const buttons = [
+      { id: 'expand_location', title: '📍 Expand Location' },
+      { id: 'increase_budget', title: '💰 Increase Budget' },
+      { id: 'any_property_type', title: '🏠 Any Property Type' },
+      { id: 'essential_only', title: '✨ Essential Features Only' }
+    ];
+
+    await this.whatsapp.sendButtonMessage(from, message, buttons);
   }
 
 
