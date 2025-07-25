@@ -2,6 +2,8 @@ const WhatsAppService = require('./WhatsAppService');
 const UserService = require('./UserService');
 const ConversationService = require('./ConversationService');
 const PropertyService = require('./PropertyService');
+const PropertySearchService = require('./PropertySearchService');
+const NLPService = require('./NLPService');
 const { logger } = require('../utils/logger');
 
 class MessageHandlerService {
@@ -10,6 +12,8 @@ class MessageHandlerService {
     this.userService = new UserService();
     this.conversationService = new ConversationService();
     this.propertyService = new PropertyService();
+    this.propertySearchService = new PropertySearchService();
+    this.nlpService = new NLPService();
   }
 
   // Main message processing entry point
@@ -132,7 +136,13 @@ class MessageHandlerService {
 
   // Handle property search flow
   async handlePropertySearchFlow(user, conversation, messageText, from) {
-    await this.startPropertySearch(user, conversation, from);
+    // If user is in search flow, process their search query
+    if (conversation.currentStep === 'awaiting_search_query') {
+      await this.processSearchQuery(user, conversation, messageText, from);
+    } else {
+      // Start new search
+      await this.startPropertySearch(user, conversation, from);
+    }
   }
 
   // Handle booking flow
@@ -267,16 +277,29 @@ What would you like to do?`;
   async startPropertySearch(user, conversation, from) {
     const searchText = `🔍 *Property Search*
 
-Let's find your perfect home! How would you like to search?`;
+I can help you find the perfect property! You can:
+
+📝 *Tell me what you're looking for* (e.g., "2 bedroom apartment in Molyko under 80,000 FCFA")
+📍 *Search by location*
+💰 *Search by budget*
+🏠 *Search by property type*
+
+What would you like to do?`;
 
     const buttons = [
-      { id: 'search_by_location', title: '📍 By Location' },
-      { id: 'search_by_budget', title: '💰 By Budget' },
-      { id: 'search_by_type', title: '🏠 By Type' }
+      { id: 'smart_search', title: '🤖 Smart Search' },
+      { id: 'browse_featured', title: '⭐ Featured Properties' },
+      { id: 'filter_search', title: '🔧 Advanced Filters' }
     ];
 
     await this.whatsapp.sendButtonMessage(from, searchText, buttons);
-    await this.conversationService.updateFlow(conversation.id, 'property_search', 'search_method');
+
+    // Update conversation to await search query
+    await this.conversationService.updateConversation(conversation.id, {
+      currentFlow: 'property_search',
+      currentStep: 'awaiting_search_query',
+      lastActivity: new Date()
+    });
   }
 
   // Handle property search flow
@@ -296,24 +319,189 @@ Let's find your perfect home! How would you like to search?`;
     }
   }
 
-  // Handle general search query
-  async handleGeneralSearch(user, conversation, messageText, from) {
+  // Process intelligent search query
+  async processSearchQuery(user, conversation, messageText, from) {
     try {
-      // Extract search criteria from natural language
-      const searchCriteria = this.extractSearchCriteria(messageText);
-      
-      // Search properties
-      const properties = await this.propertyService.searchProperties(messageText, {
-        status: 'available',
-        ...searchCriteria
-      });
+      logger.info(`Processing search query from ${from}: "${messageText}"`);
+
+      // Use NLP to parse the user's query
+      const searchCriteria = this.nlpService.parseUserQuery(messageText);
+
+      // Get user preferences for better ranking
+      const userPreferences = user.preferences || {};
+
+      // Search properties using intelligent search
+      const properties = await this.propertySearchService.searchProperties(searchCriteria, userPreferences);
 
       if (properties.length === 0) {
-        await this.whatsapp.sendTextMessage(from, 
-          "Sorry, I couldn't find any properties matching your criteria. Try adjusting your search or contact our agents for more options."
-        );
+        await this.handleNoResults(user, conversation, messageText, from, searchCriteria);
         return;
       }
+
+      // Send search results
+      await this.sendPropertyResults(user, conversation, properties, from);
+
+    } catch (error) {
+      logger.error('Error processing search query:', error);
+      await this.whatsapp.sendTextMessage(from,
+        "Sorry, I encountered an error while searching. Please try again or contact support."
+      );
+    }
+  }
+
+  // Handle no search results
+  async handleNoResults(user, conversation, messageText, from, searchCriteria) {
+    let message = "🔍 I couldn't find any properties matching your exact criteria.\n\n";
+
+    // Suggest alternatives based on what was searched
+    if (searchCriteria.location) {
+      message += `📍 Try searching in nearby areas like Molyko, Great Soppo, or Buea Town.\n`;
+    }
+
+    if (searchCriteria.priceRange) {
+      message += `💰 Consider adjusting your budget range.\n`;
+    }
+
+    if (searchCriteria.propertyType) {
+      message += `🏠 Try looking at different property types.\n`;
+    }
+
+    message += `\n💡 *Suggestions:*\n`;
+    message += `• Try "cheap apartments in Molyko"\n`;
+    message += `• Try "2 bedroom house under 100000"\n`;
+    message += `• Try "studio with parking"\n\n`;
+    message += `Or I can show you our featured properties?`;
+
+    const buttons = [
+      { id: 'show_featured', title: '⭐ Featured Properties' },
+      { id: 'broaden_search', title: '🔍 Broaden Search' },
+      { id: 'contact_agent', title: '👨‍💼 Contact Agent' }
+    ];
+
+    await this.whatsapp.sendButtonMessage(from, message, buttons);
+  }
+
+  // Send property search results
+  async sendPropertyResults(user, conversation, properties, from) {
+    try {
+      const resultCount = properties.length;
+      const headerMessage = `🏠 *Found ${resultCount} Properties*\n\nHere are the best matches for you:`;
+
+      await this.whatsapp.sendTextMessage(from, headerMessage);
+
+      // Send top 3 properties as detailed cards
+      const topProperties = properties.slice(0, 3);
+
+      for (let i = 0; i < topProperties.length; i++) {
+        const property = topProperties[i];
+        await this.sendPropertyCard(property, from, i + 1);
+
+        // Small delay between messages to avoid rate limiting
+        if (i < topProperties.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+
+      // If there are more properties, offer to show them
+      if (properties.length > 3) {
+        const moreMessage = `📋 I found ${properties.length - 3} more properties. Would you like to see them?`;
+
+        const buttons = [
+          { id: 'show_more_results', title: '📋 Show More' },
+          { id: 'refine_search', title: '🔍 Refine Search' },
+          { id: 'contact_agent', title: '👨‍💼 Contact Agent' }
+        ];
+
+        await this.whatsapp.sendButtonMessage(from, moreMessage, buttons);
+      } else {
+        // Show action buttons for the results
+        const actionMessage = `What would you like to do next?`;
+
+        const buttons = [
+          { id: 'new_search', title: '🔍 New Search' },
+          { id: 'save_search', title: '💾 Save Search' },
+          { id: 'contact_agent', title: '👨‍💼 Contact Agent' }
+        ];
+
+        await this.whatsapp.sendButtonMessage(from, actionMessage, buttons);
+      }
+
+      // Update conversation state
+      await this.conversationService.updateConversation(conversation.id, {
+        currentStep: 'viewing_results',
+        lastSearchResults: properties.map(p => p.id),
+        lastActivity: new Date()
+      });
+
+    } catch (error) {
+      logger.error('Error sending property results:', error);
+      await this.whatsapp.sendTextMessage(from,
+        "Sorry, I had trouble displaying the results. Please try again."
+      );
+    }
+  }
+
+  // Send individual property card
+  async sendPropertyCard(property, from, index) {
+    try {
+      // Format property details
+      const title = `${index}. ${property.title || `${property.type} in ${property.location}`}`;
+
+      let message = `🏠 *${title}*\n\n`;
+      message += `📍 *Location:* ${property.location}\n`;
+      message += `💰 *Price:* ${this.formatPrice(property.price)} FCFA/month\n`;
+
+      if (property.bedrooms) {
+        message += `🛏️ *Bedrooms:* ${property.bedrooms}\n`;
+      }
+
+      if (property.bathrooms) {
+        message += `🚿 *Bathrooms:* ${property.bathrooms}\n`;
+      }
+
+      if (property.amenities && property.amenities.length > 0) {
+        message += `✨ *Amenities:* ${property.amenities.slice(0, 3).join(', ')}`;
+        if (property.amenities.length > 3) {
+          message += ` +${property.amenities.length - 3} more`;
+        }
+        message += `\n`;
+      }
+
+      if (property.description) {
+        const shortDesc = property.description.length > 100
+          ? property.description.substring(0, 100) + '...'
+          : property.description;
+        message += `\n📝 ${shortDesc}\n`;
+      }
+
+      // Add action buttons for this property
+      const buttons = [
+        { id: `view_${property.id}`, title: '👁️ View Details' },
+        { id: `book_${property.id}`, title: '📅 Book Tour' },
+        { id: `contact_${property.id}`, title: '📞 Contact' }
+      ];
+
+      // Send property image if available
+      if (property.images && property.images.length > 0) {
+        await this.whatsapp.sendImageMessage(from, property.images[0], message);
+        await this.whatsapp.sendButtonMessage(from, "What would you like to do?", buttons);
+      } else {
+        await this.whatsapp.sendButtonMessage(from, message, buttons);
+      }
+
+    } catch (error) {
+      logger.error('Error sending property card:', error);
+      // Fallback to simple text message
+      const simpleMessage = `🏠 ${property.title || property.type} in ${property.location} - ${this.formatPrice(property.price)} FCFA/month`;
+      await this.whatsapp.sendTextMessage(from, simpleMessage);
+    }
+  }
+
+  // Format price with proper comma separation
+  formatPrice(price) {
+    if (!price) return 'Price on request';
+    return price.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  }
 
       // Show first few properties
       await this.showPropertyResults(user, properties.slice(0, 5), from);
