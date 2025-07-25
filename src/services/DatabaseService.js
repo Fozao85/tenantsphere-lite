@@ -21,7 +21,13 @@ class DatabaseService {
         return { id: docRef.id, ...data };
       }
     } catch (error) {
-      logger.error(`Error creating document in ${collection}:`, error);
+      logger.error(`Error creating document in ${collection}:`, {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        collection: collection,
+        dataKeys: Object.keys(data)
+      });
       throw error;
     }
   }

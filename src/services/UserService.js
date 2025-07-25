@@ -23,7 +23,12 @@ class UserService extends DatabaseService {
       logger.info(`User created: ${user.id}`);
       return result;
     } catch (error) {
-      logger.error('Error creating user:', error);
+      logger.error('Error creating user:', {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        stack: error.stack
+      });
       throw error;
     }
   }

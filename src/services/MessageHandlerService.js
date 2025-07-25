@@ -353,23 +353,37 @@ Let's find your perfect home! How would you like to search?`;
   async getOrCreateUser(whatsappId, messageData) {
     try {
       let user = await this.userService.getUserByWhatsAppId(whatsappId);
-      
+
       if (!user) {
+        // Format phone number correctly
+        const formattedPhone = whatsappId.startsWith('+') ? whatsappId : `+${whatsappId}`;
+
         // Create new user
         const userData = {
           whatsappId: whatsappId,
-          phone: `+${whatsappId}`,
+          phone: formattedPhone,
           name: messageData.contacts?.[0]?.profile?.name || null,
           optedIn: true
         };
-        
+
+        logger.info('Creating new user with data:', {
+          whatsappId: userData.whatsappId,
+          phone: userData.phone,
+          name: userData.name
+        });
+
         user = await this.userService.createUser(userData);
         logger.info(`Created new user: ${user.id} for WhatsApp ID: ${whatsappId}`);
       }
-      
+
       return user;
     } catch (error) {
-      logger.error('Error getting or creating user:', error);
+      logger.error('Error getting or creating user:', {
+        whatsappId,
+        message: error.message,
+        code: error.code,
+        details: error.details
+      });
       throw error;
     }
   }
