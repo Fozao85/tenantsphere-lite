@@ -5,6 +5,9 @@ const PropertyService = require('./PropertyService');
 const PropertySearchService = require('./PropertySearchService');
 const PropertyDisplayService = require('./PropertyDisplayService');
 const PropertyActionService = require('./PropertyActionService');
+const RecommendationService = require('./RecommendationService');
+const PreferenceLearningService = require('./PreferenceLearningService');
+const ConversationFlowService = require('./ConversationFlowService');
 const NLPService = require('./NLPService');
 const { logger } = require('../utils/logger');
 
@@ -17,6 +20,9 @@ class MessageHandlerService {
     this.propertySearchService = new PropertySearchService();
     this.propertyDisplayService = new PropertyDisplayService();
     this.propertyActionService = new PropertyActionService();
+    this.recommendationService = new RecommendationService();
+    this.preferenceLearningService = new PreferenceLearningService();
+    this.conversationFlowService = new ConversationFlowService();
     this.nlpService = new NLPService();
   }
 
@@ -44,10 +50,18 @@ class MessageHandlerService {
         metadata: { messageId, timestamp }
       });
 
-      // Process based on message type
+      // Determine conversation flow
+      const messageText = this.extractMessageContent(messageData);
+      const flowResult = await this.conversationFlowService.determineFlow(
+        user, conversation, messageText, type
+      );
+
+      logger.info(`Flow determined: ${flowResult.flow} - ${flowResult.state} (${flowResult.action})`);
+
+      // Process based on message type with flow context
       switch (type) {
         case 'text':
-          await this.handleTextMessage(user, conversation, messageData);
+          await this.handleTextMessageInFlow(user, conversation, messageData, flowResult);
           break;
         case 'interactive':
           await this.handleInteractiveMessage(user, conversation, messageData);
@@ -61,6 +75,9 @@ class MessageHandlerService {
         default:
           await this.handleUnsupportedMessage(user, conversation, messageData);
       }
+
+      // Learn from user interaction
+      await this.learnFromInteraction(user, messageData, flowResult);
 
     } catch (error) {
       logger.error('Error processing message:', {
@@ -671,20 +688,10 @@ What are you looking for?`;
     try {
       await this.whatsapp.sendTextMessage(from, "⭐ Finding personalized recommendations...");
 
-      // Get user preferences and search history for better recommendations
-      const userPreferences = user.preferences || {};
+      // Use the recommendation service for intelligent recommendations
+      const recommendations = await this.recommendationService.generateRecommendations(user, 8);
 
-      // Build search criteria based on user preferences
-      const searchCriteria = {
-        availability: true,
-        propertyType: userPreferences.preferredPropertyTypes,
-        priceRange: userPreferences.priceRange,
-        amenities: userPreferences.preferredAmenities
-      };
-
-      const properties = await this.propertySearchService.searchProperties(searchCriteria, userPreferences);
-
-      if (properties.length === 0) {
+      if (recommendations.length === 0) {
         await this.whatsapp.sendTextMessage(from,
           "🤔 I don't have enough information about your preferences yet. Let's start with a search to learn what you like!"
         );
@@ -692,10 +699,17 @@ What are you looking for?`;
         return;
       }
 
-      const message = `⭐ *Recommended for You*\n\nBased on your preferences, here are properties I think you'll love:`;
+      const message = `⭐ *Personalized Recommendations*\n\nBased on your preferences and behavior, here are ${recommendations.length} properties I think you'll love:`;
       await this.whatsapp.sendTextMessage(from, message);
 
-      await this.sendPropertyResults(user, conversation, properties, from);
+      await this.sendPropertyResults(user, conversation, recommendations, from);
+
+      // Track recommendation interaction
+      await this.preferenceLearningService.learnFromInteraction(user.id, {
+        action: 'view_recommendations',
+        recommendationCount: recommendations.length,
+        timestamp: new Date()
+      });
 
     } catch (error) {
       logger.error('Error showing recommended properties:', error);
@@ -1186,6 +1200,311 @@ Would you like me to:`;
     } catch (error) {
       logger.error('Error showing saved properties:', error);
       await this.whatsapp.sendTextMessage(from, "Sorry, I couldn't load your saved properties. Please try again.");
+    }
+  }
+
+  // Learn from user interactions for personalization
+  async learnFromInteraction(user, messageData, flowResult) {
+    try {
+      const interaction = {
+        action: this.getInteractionAction(messageData, flowResult),
+        messageType: messageData.type,
+        flow: flowResult.flow,
+        state: flowResult.state,
+        timestamp: new Date()
+      };
+
+      // Add property-specific data if available
+      if (messageData.propertyId) {
+        interaction.propertyId = messageData.propertyId;
+      }
+
+      // Add search-specific data if it's a search interaction
+      if (flowResult.flow === 'property_search' && messageData.type === 'text') {
+        const searchTerms = await this.nlpService.extractSearchTerms(this.extractMessageContent(messageData));
+        interaction.searchTerms = searchTerms;
+        interaction.searchMethod = 'text';
+      }
+
+      await this.preferenceLearningService.learnFromInteraction(user.id, interaction);
+
+    } catch (error) {
+      logger.warn('Could not learn from interaction:', error.message);
+    }
+  }
+
+  // Get interaction action type for learning
+  getInteractionAction(messageData, flowResult) {
+    if (messageData.type === 'interactive') {
+      const buttonId = messageData.interactive.button_reply?.id || messageData.interactive.list_reply?.id;
+      if (buttonId) {
+        if (buttonId.startsWith('view_')) return 'view';
+        if (buttonId.startsWith('book_')) return 'book';
+        if (buttonId.startsWith('save_')) return 'save';
+        if (buttonId.startsWith('contact_')) return 'contact';
+        if (buttonId.startsWith('share_')) return 'share';
+      }
+    }
+
+    if (flowResult.flow === 'property_search') return 'search';
+    if (flowResult.flow === 'booking') return 'book';
+
+    return 'general';
+  }
+
+  // Handle onboarding flow
+  async handleOnboardingFlow(user, conversation, messageText, from, state, action) {
+    switch (state) {
+      case 'welcome':
+        await this.whatsapp.sendTextMessage(from,
+          `🎉 *Welcome to TenantSphere!*\n\nI'm your AI property assistant. I can help you:\n\n🔍 Find properties that match your needs\n📅 Book property tours\n💾 Save your favorite properties\n⭐ Get personalized recommendations\n\nLet me show you around! Ready to get started?`
+        );
+
+        const buttons = [
+          { id: 'ready_onboarding', title: '✅ I\'m Ready!' },
+          { id: 'skip_onboarding', title: '⏭️ Skip Tour' }
+        ];
+
+        await this.whatsapp.sendButtonMessage(from, "What would you like to do?", buttons);
+        break;
+
+      case 'explaining_features':
+        await this.whatsapp.sendTextMessage(from,
+          `🚀 *Here's what I can do for you:*\n\n🤖 **Smart Search**: Just tell me what you're looking for in natural language\n📊 **Personalized Recommendations**: I learn your preferences over time\n📸 **Rich Property Details**: Photos, amenities, and all the details you need\n📅 **Easy Booking**: Schedule property tours with just a few taps\n\nWould you like to set up your preferences now?`
+        );
+        break;
+
+      default:
+        await this.startPropertySearch(user, conversation, from);
+    }
+  }
+
+  // Handle booking flow
+  async handleBookingFlow(user, conversation, messageText, from, state) {
+    switch (state) {
+      case 'awaiting_details':
+        // Process booking details from user message
+        await this.processBookingDetails(user, conversation, messageText, from);
+        break;
+
+      case 'confirming_booking':
+        if (messageText.toLowerCase().includes('yes') || messageText.toLowerCase().includes('confirm')) {
+          await this.confirmBooking(user, conversation, from);
+        } else {
+          await this.whatsapp.sendTextMessage(from, "Please provide your preferred date and time for the property tour.");
+        }
+        break;
+
+      default:
+        await this.whatsapp.sendTextMessage(from, "Let's book a property tour! Which property interests you?");
+    }
+  }
+
+  // Handle preference setup flow
+  async handlePreferenceSetupFlow(user, conversation, messageText, from, state) {
+    switch (state) {
+      case 'collecting_location':
+        await this.collectLocationPreference(user, messageText, from);
+        break;
+
+      case 'collecting_budget':
+        await this.collectBudgetPreference(user, messageText, from);
+        break;
+
+      case 'collecting_type':
+        await this.collectPropertyTypePreference(user, messageText, from);
+        break;
+
+      case 'collecting_amenities':
+        await this.collectAmenityPreferences(user, messageText, from);
+        break;
+
+      default:
+        await this.whatsapp.sendTextMessage(from, "Let's set up your preferences! What locations interest you?");
+    }
+  }
+
+  // Handle support flow
+  async handleSupportFlow(user, conversation, messageText, from, state) {
+    switch (state) {
+      case 'identifying_issue':
+        await this.identifyUserIssue(messageText, from);
+        break;
+
+      case 'providing_solution':
+        await this.provideSolution(messageText, from);
+        break;
+
+      default:
+        await this.whatsapp.sendTextMessage(from, "I'm here to help! What can I assist you with today?");
+    }
+  }
+
+  // Process booking details
+  async processBookingDetails(user, conversation, messageText, from) {
+    try {
+      // Extract date and time from message
+      const bookingDetails = await this.nlpService.extractBookingDetails(messageText);
+
+      if (bookingDetails.date || bookingDetails.time) {
+        // Save booking details
+        await this.conversationService.updateConversation(conversation.id, {
+          bookingDetails: {
+            ...conversation.bookingDetails,
+            ...bookingDetails,
+            userMessage: messageText
+          }
+        });
+
+        // Confirm booking details
+        let confirmMessage = `📅 *Booking Confirmation*\n\n`;
+        if (bookingDetails.date) confirmMessage += `📆 Date: ${bookingDetails.date}\n`;
+        if (bookingDetails.time) confirmMessage += `⏰ Time: ${bookingDetails.time}\n`;
+        confirmMessage += `\nIs this correct?`;
+
+        const buttons = [
+          { id: 'confirm_booking', title: '✅ Yes, Confirm' },
+          { id: 'modify_booking', title: '✏️ Modify Details' }
+        ];
+
+        await this.whatsapp.sendButtonMessage(from, confirmMessage, buttons);
+      } else {
+        await this.whatsapp.sendTextMessage(from,
+          "I couldn't understand the date/time. Please try again with something like:\n• Tomorrow at 2 PM\n• Monday morning\n• 25th January at 3:30 PM"
+        );
+      }
+
+    } catch (error) {
+      logger.error('Error processing booking details:', error);
+      await this.whatsapp.sendTextMessage(from, "Sorry, I had trouble processing your booking details. Please try again.");
+    }
+  }
+
+  // Confirm booking
+  async confirmBooking(user, conversation, from) {
+    try {
+      const bookingDetails = conversation.bookingDetails;
+
+      // Here you would typically save to database and send confirmation
+      await this.whatsapp.sendTextMessage(from,
+        `✅ *Booking Confirmed!*\n\nYour property tour has been scheduled. Our agent will contact you soon to confirm the details.\n\n📞 If you need to make changes, please contact us directly.\n\nThank you for using TenantSphere! 🏠`
+      );
+
+      // Complete the booking flow
+      await this.conversationFlowService.completeFlow(conversation, 'booking', bookingDetails);
+
+    } catch (error) {
+      logger.error('Error confirming booking:', error);
+      await this.whatsapp.sendTextMessage(from, "Sorry, I couldn't confirm your booking. Please try again or contact our agents.");
+    }
+  }
+
+  // Collect location preference
+  async collectLocationPreference(user, messageText, from) {
+    const locations = await this.nlpService.extractLocations(messageText);
+
+    if (locations.length > 0) {
+      await this.userService.updateUserPreferences(user.id, {
+        preferredLocations: locations
+      });
+
+      await this.whatsapp.sendTextMessage(from,
+        `✅ Great! I've noted your location preferences: ${locations.join(', ')}\n\nWhat's your budget range for monthly rent?`
+      );
+    } else {
+      await this.whatsapp.sendTextMessage(from,
+        "Please tell me which areas you're interested in (e.g., Molyko, Great Soppo, Mile 16)"
+      );
+    }
+  }
+
+  // Collect budget preference
+  async collectBudgetPreference(user, messageText, from) {
+    const budget = await this.nlpService.extractPriceRange(messageText);
+
+    if (budget.min || budget.max) {
+      await this.userService.updateUserPreferences(user.id, {
+        budgetRange: budget
+      });
+
+      await this.whatsapp.sendTextMessage(from,
+        `💰 Budget noted! What type of property are you looking for? (apartment, house, studio)`
+      );
+    } else {
+      await this.whatsapp.sendTextMessage(from,
+        "Please tell me your budget range (e.g., 'under 80000', '50000 to 100000', 'around 75000')"
+      );
+    }
+  }
+
+  // Collect property type preference
+  async collectPropertyTypePreference(user, messageText, from) {
+    const propertyTypes = await this.nlpService.extractPropertyTypes(messageText);
+
+    if (propertyTypes.length > 0) {
+      await this.userService.updateUserPreferences(user.id, {
+        preferredPropertyTypes: propertyTypes
+      });
+
+      await this.whatsapp.sendTextMessage(from,
+        `🏠 Property type preferences saved! What amenities are important to you? (e.g., parking, generator, furnished)`
+      );
+    } else {
+      await this.whatsapp.sendTextMessage(from,
+        "Please specify the property type you prefer (apartment, house, studio, etc.)"
+      );
+    }
+  }
+
+  // Collect amenity preferences
+  async collectAmenityPreferences(user, messageText, from) {
+    const amenities = await this.nlpService.extractAmenities(messageText);
+
+    await this.userService.updateUserPreferences(user.id, {
+      preferredAmenities: amenities
+    });
+
+    await this.whatsapp.sendTextMessage(from,
+      `✨ Perfect! Your preferences have been saved. I'll use these to provide personalized recommendations.\n\nReady to start searching for properties?`
+    );
+
+    const buttons = [
+      { id: 'start_search', title: '🔍 Start Searching' },
+      { id: 'get_recommendations', title: '⭐ Get Recommendations' }
+    ];
+
+    await this.whatsapp.sendButtonMessage(from, "What would you like to do?", buttons);
+  }
+
+  // Identify user issue for support
+  async identifyUserIssue(messageText, from) {
+    const intent = await this.nlpService.analyzeIntent(messageText);
+
+    if (intent.intent === 'technical_issue') {
+      await this.whatsapp.sendTextMessage(from,
+        `🔧 I understand you're having a technical issue. Here are some quick solutions:\n\n• Try refreshing the chat\n• Check your internet connection\n• Clear your browser cache\n\nIf the problem persists, I can connect you with our technical support team.`
+      );
+    } else if (intent.intent === 'booking_issue') {
+      await this.whatsapp.sendTextMessage(from,
+        `📅 Having trouble with booking? I can help you:\n\n• Schedule a new property tour\n• Modify existing booking\n• Cancel a booking\n• Contact the property agent\n\nWhat specifically do you need help with?`
+      );
+    } else {
+      await this.whatsapp.sendTextMessage(from,
+        `I'm here to help! Our support team can assist with:\n\n• Property search issues\n• Booking problems\n• Account questions\n• Technical difficulties\n\nWould you like me to connect you with a human agent?`
+      );
+    }
+  }
+
+  // Provide solution for support
+  async provideSolution(messageText, from) {
+    if (messageText.toLowerCase().includes('solved') || messageText.toLowerCase().includes('fixed')) {
+      await this.whatsapp.sendTextMessage(from,
+        `🎉 Great! I'm glad I could help resolve your issue. Is there anything else you need assistance with?`
+      );
+    } else {
+      await this.whatsapp.sendTextMessage(from,
+        `Let me connect you with one of our human agents who can provide more detailed assistance. They'll be with you shortly!`
+      );
     }
   }
 }
