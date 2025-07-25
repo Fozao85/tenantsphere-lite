@@ -55,7 +55,13 @@ class MessageHandlerService {
       }
 
     } catch (error) {
-      logger.error('Error processing message:', error);
+      logger.error('Error processing message:', {
+        message: error.message,
+        stack: error.stack,
+        from: messageData.from,
+        messageType: messageData.type,
+        messageId: messageData.id
+      });
       // Send error message to user
       try {
         await this.whatsapp.sendTextMessage(
@@ -70,32 +76,42 @@ class MessageHandlerService {
 
   // Handle text messages
   async handleTextMessage(user, conversation, messageData) {
-    const messageText = messageData.text.body.toLowerCase().trim();
-    const from = messageData.from;
+    try {
+      const messageText = messageData.text.body.toLowerCase().trim();
+      const from = messageData.from;
 
-    logger.info(`Handling text message: "${messageText}" from ${from}`);
+      logger.info(`Handling text message: "${messageText}" from ${from}`);
 
-    // Check for common commands first
-    if (await this.handleCommonCommands(user, conversation, messageText, from)) {
-      return;
-    }
+      // Check for common commands first
+      if (await this.handleCommonCommands(user, conversation, messageText, from)) {
+        return;
+      }
 
-    // Handle based on current conversation flow
-    switch (conversation.currentFlow) {
-      case 'welcome':
-        await this.handleWelcomeFlow(user, conversation, messageText, from);
-        break;
-      case 'property_search':
-        await this.handlePropertySearchFlow(user, conversation, messageText, from);
-        break;
-      case 'booking':
-        await this.handleBookingFlow(user, conversation, messageText, from);
-        break;
-      case 'preferences':
-        await this.handlePreferencesFlow(user, conversation, messageText, from);
-        break;
-      default:
-        await this.handleDefaultFlow(user, conversation, messageText, from);
+      // Handle based on current conversation flow
+      switch (conversation.currentFlow) {
+        case 'welcome':
+          await this.handleWelcomeFlow(user, conversation, messageText, from);
+          break;
+        case 'property_search':
+          await this.handlePropertySearchFlow(user, conversation, messageText, from);
+          break;
+        case 'booking':
+          await this.handleBookingFlow(user, conversation, messageText, from);
+          break;
+        case 'preferences':
+          await this.handlePreferencesFlow(user, conversation, messageText, from);
+          break;
+        default:
+          await this.handleDefaultFlow(user, conversation, messageText, from);
+      }
+    } catch (error) {
+      logger.error('Error in handleTextMessage:', {
+        message: error.message,
+        stack: error.stack,
+        messageData: messageData,
+        conversationFlow: conversation?.currentFlow
+      });
+      throw error; // Re-throw to be caught by main error handler
     }
   }
 
