@@ -26,10 +26,15 @@ const verifyWhatsAppWebhook = (req, res) => {
 // Handle WhatsApp webhook (POST request)
 const handleWhatsAppWebhook = async (req, res) => {
   try {
-    const body = req.body;
-    
-    logger.info('WhatsApp webhook received', { 
-      body: JSON.stringify(body, null, 2) 
+    let body = req.body;
+
+    // Handle Buffer data
+    if (Buffer.isBuffer(body)) {
+      body = JSON.parse(body.toString());
+    }
+
+    logger.info('WhatsApp webhook received', {
+      body: JSON.stringify(body, null, 2)
     });
 
     // Acknowledge receipt immediately
