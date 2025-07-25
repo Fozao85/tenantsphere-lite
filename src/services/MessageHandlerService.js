@@ -118,6 +118,16 @@ class MessageHandlerService {
   // Handle welcome flow
   async handleWelcomeFlow(user, conversation, messageText, from) {
     await this.sendWelcomeMessage(user, from);
+
+    // Update conversation flow
+    try {
+      await this.conversationService.updateConversation(conversation.id, {
+        currentFlow: 'main_menu',
+        lastActivity: new Date()
+      });
+    } catch (error) {
+      logger.warn('Could not update conversation:', error.message);
+    }
   }
 
   // Handle property search flow
@@ -198,7 +208,7 @@ What would you like to do today?`;
     ];
 
     await this.whatsapp.sendButtonMessage(from, welcomeText, buttons);
-    await this.conversationService.updateFlow(user.id, 'welcome', 'menu_shown');
+    // Skip conversation flow update for now - will be handled elsewhere
   }
 
   // Send help message
