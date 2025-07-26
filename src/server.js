@@ -12,6 +12,7 @@ const schedulerService = require('./services/SchedulerService');
 // Import routes
 const webhookRoutes = require('./routes/webhook');
 const propertyRoutes = require('./routes/properties');
+const imageRoutes = require('./routes/images');
 const userRoutes = require('./routes/users');
 const agentRoutes = require('./routes/agents');
 
@@ -22,7 +23,22 @@ const PORT = process.env.PORT || 3000;
 initializeFirebase();
 
 // Middleware
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrcAttr: ["'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https:"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'", "https:", "data:"],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'"],
+      frameSrc: ["'self'"],
+    },
+  },
+}));
 app.use(cors());
 app.use(morgan('combined', { stream: { write: message => logger.info(message.trim()) } }));
 
@@ -32,6 +48,10 @@ app.use('/webhook/whatsapp', express.raw({ type: 'application/json' }));
 // JSON body parser for other routes
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Serve static files
+app.use(express.static('public'));
+app.use('/uploads', express.static('public/uploads'));
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -46,6 +66,7 @@ app.get('/health', (req, res) => {
 // API Routes
 app.use('/webhook', webhookRoutes);
 app.use('/api/properties', propertyRoutes);
+app.use('/api/images', imageRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/agents', agentRoutes);
 
@@ -100,7 +121,9 @@ app.listen(PORT, () => {
 
   // Start scheduler service only if Firebase is available
   try {
-    schedulerService.start();
+    // Temporarily disable scheduler to fix startup issues
+    // schedulerService.start();
+    logger.info('📝 Scheduler service temporarily disabled for testing');
   } catch (error) {
     logger.warn('⚠️ Scheduler service not started - Firebase not available:', error.message);
     logger.info('💡 The server will run without background tasks. Configure Firebase to enable full functionality.');
