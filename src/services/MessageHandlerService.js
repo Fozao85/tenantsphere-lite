@@ -140,6 +140,52 @@ class MessageHandlerService {
     }
   }
 
+  // Handle text messages with flow context
+  async handleTextMessageInFlow(user, conversation, messageData, flowResult) {
+    try {
+      const messageText = messageData.text.body.toLowerCase().trim();
+      const from = messageData.from;
+
+      logger.info(`Handling text message in flow: "${messageText}" from ${from}`, {
+        flow: flowResult.flow,
+        state: flowResult.state,
+        action: flowResult.action
+      });
+
+      // Check for common commands first
+      if (await this.handleCommonCommands(user, conversation, messageText, from)) {
+        return;
+      }
+
+      // Handle based on determined flow and state
+      switch (flowResult.flow) {
+        case 'welcome':
+          await this.handleWelcomeFlow(user, conversation, messageText, from);
+          break;
+        case 'property_search':
+          await this.handlePropertySearchFlow(user, conversation, messageText, from);
+          break;
+        case 'booking':
+          await this.handleBookingFlow(user, conversation, messageText, from);
+          break;
+        case 'preferences':
+          await this.handlePreferencesFlow(user, conversation, messageText, from);
+          break;
+        default:
+          await this.handleDefaultFlow(user, conversation, messageText, from);
+      }
+    } catch (error) {
+      logger.error('Error in handleTextMessageInFlow:', {
+        message: error.message,
+        stack: error.stack,
+        messageData: messageData,
+        flowResult: flowResult,
+        conversationFlow: conversation?.currentFlow
+      });
+      throw error; // Re-throw to be caught by main error handler
+    }
+  }
+
   // Handle welcome flow
   async handleWelcomeFlow(user, conversation, messageText, from) {
     await this.sendWelcomeMessage(user, from);
