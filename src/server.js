@@ -12,7 +12,6 @@ const schedulerService = require('./services/SchedulerService');
 // Import routes
 const webhookRoutes = require('./routes/webhook');
 const propertyRoutes = require('./routes/properties');
-const imageRoutes = require('./routes/images');
 const userRoutes = require('./routes/users');
 const agentRoutes = require('./routes/agents');
 
@@ -66,7 +65,6 @@ app.get('/health', (req, res) => {
 // API Routes
 app.use('/webhook', webhookRoutes);
 app.use('/api/properties', propertyRoutes);
-app.use('/api/images', imageRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/agents', agentRoutes);
 
