@@ -541,6 +541,28 @@ What would you like to do?`;
     }
   }
 
+  // Handle general search (default case for property search flow)
+  async handleGeneralSearch(user, conversation, messageText, from) {
+    try {
+      logger.info(`Handling general search from ${from}: "${messageText}"`);
+
+      // Process the search query using the intelligent search system
+      await this.processSearchQuery(user, conversation, messageText, from);
+
+    } catch (error) {
+      logger.error('Error in handleGeneralSearch:', {
+        message: error.message,
+        stack: error.stack,
+        from: from,
+        messageText: messageText
+      });
+
+      await this.whatsapp.sendTextMessage(from,
+        "Sorry, I encountered an error while processing your search. Please try again or contact support."
+      );
+    }
+  }
+
   // Process intelligent search query
   async processSearchQuery(user, conversation, messageText, from) {
     try {
