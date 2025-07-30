@@ -350,6 +350,17 @@ class MessageHandlerService {
 
       // Handle other button actions
       switch (buttonId) {
+        // Welcome message property type selections
+        case 'search_apartments':
+          await this.searchByPropertyType(user, conversation, 'apartment', from);
+          break;
+        case 'search_houses':
+          await this.searchByPropertyType(user, conversation, 'house', from);
+          break;
+        case 'show_featured':
+          await this.showFeaturedProperties(from);
+          break;
+
         // Search and browsing actions
         case 'smart_search':
           await this.startSmartSearch(user, conversation, from);
@@ -716,6 +727,66 @@ What type of property are you looking for?`;
     } catch (error) {
       logger.error('Fallback search failed:', error);
       return [];
+    }
+  }
+
+  // Search by property type (from welcome message buttons)
+  async searchByPropertyType(user, conversation, propertyType, from) {
+    try {
+      logger.info(`Searching for ${propertyType} properties for user ${from}`);
+
+      // Send immediate response
+      await this.whatsapp.sendTextMessage(from,
+        `🏠 Great choice! Let me find ${propertyType}s for you...`
+      );
+
+      // Search for properties of the specified type
+      const searchCriteria = {
+        propertyType: propertyType,
+        intent: 'search'
+      };
+
+      const userPreferences = user.preferences || {};
+      let properties = [];
+
+      try {
+        properties = await this.propertySearchService.searchProperties(searchCriteria, userPreferences);
+        logger.info(`Found ${properties.length} ${propertyType} properties`);
+      } catch (searchError) {
+        logger.error('Error searching by property type:', searchError);
+        // Fallback to all properties filtered by type
+        try {
+          const allProperties = await this.propertyService.getAllProperties();
+          properties = allProperties.filter(p =>
+            p.propertyType && p.propertyType.toLowerCase() === propertyType.toLowerCase()
+          );
+        } catch (fallbackError) {
+          logger.error('Fallback search also failed:', fallbackError);
+        }
+      }
+
+      if (properties.length === 0) {
+        await this.handleNoResults(user, conversation, `${propertyType} properties`, from, searchCriteria);
+        return;
+      }
+
+      // Send property results
+      await this.sendPropertyResults(user, conversation, properties, from);
+
+    } catch (error) {
+      logger.error('Error in searchByPropertyType:', {
+        message: error.message,
+        stack: error.stack,
+        propertyType: propertyType,
+        from: from
+      });
+
+      await this.whatsapp.sendTextMessage(from,
+        `Sorry, I encountered an error while searching for ${propertyType}s. Let me show you some featured properties instead!`
+      );
+
+      // Fallback to featured properties
+      await this.showFeaturedProperties(from);
     }
   }
 
