@@ -245,7 +245,37 @@ class MessageHandlerService {
 
   // Handle booking flow
   async handleBookingFlow(user, conversation, messageText, from) {
-    await this.showUserBookings(user, from);
+    try {
+      // Check conversation state to determine booking stage
+      const state = conversation?.state || 'initial';
+
+      switch (state) {
+        case 'booking_tour':
+          // User is providing booking details after clicking "Book Tour"
+          await this.processBookingDetails(user, conversation, messageText, from);
+          break;
+        case 'confirming_booking':
+          // User is confirming or modifying booking
+          if (messageText.toLowerCase().includes('yes') || messageText.toLowerCase().includes('confirm')) {
+            await this.confirmBooking(user, conversation, from);
+          } else if (messageText.toLowerCase().includes('modify') || messageText.toLowerCase().includes('change')) {
+            await this.modifyBooking(user, conversation, from);
+          } else {
+            await this.whatsapp.sendTextMessage(from, "Please confirm your booking by typing 'yes' or 'modify' if you need changes.");
+          }
+          break;
+        default:
+          // Show user's bookings or help them start a booking
+          if (messageText.includes('booking') || messageText.includes('tour')) {
+            await this.showUserBookings(user, from);
+          } else {
+            await this.whatsapp.sendTextMessage(from, "Let's book a property tour! Which property interests you?");
+          }
+      }
+    } catch (error) {
+      logger.error('Error in handleBookingFlow:', error);
+      await this.whatsapp.sendTextMessage(from, "Sorry, I encountered an error with your booking. Please try again or contact our agents directly.");
+    }
   }
 
   // Handle preferences flow
@@ -1789,26 +1819,7 @@ Would you like me to:`;
     }
   }
 
-  // Handle booking flow
-  async handleBookingFlow(user, conversation, messageText, from, state) {
-    switch (state) {
-      case 'awaiting_details':
-        // Process booking details from user message
-        await this.processBookingDetails(user, conversation, messageText, from);
-        break;
 
-      case 'confirming_booking':
-        if (messageText.toLowerCase().includes('yes') || messageText.toLowerCase().includes('confirm')) {
-          await this.confirmBooking(user, conversation, from);
-        } else {
-          await this.whatsapp.sendTextMessage(from, "Please provide your preferred date and time for the property tour.");
-        }
-        break;
-
-      default:
-        await this.whatsapp.sendTextMessage(from, "Let's book a property tour! Which property interests you?");
-    }
-  }
 
   // Handle preference setup flow
   async handlePreferenceSetupFlow(user, conversation, messageText, from, state) {
@@ -2029,6 +2040,68 @@ Would you like me to:`;
     }
   }
 
+  async showUserBookings(user, from) {
+    try {
+      // Get user's bookings from database
+      const bookings = user.bookings || [];
+
+      if (bookings.length === 0) {
+        await this.whatsapp.sendTextMessage(from,
+          `📅 *Your Bookings*\n\nYou don't have any property tours booked yet.\n\n🏠 Would you like to browse properties and book a tour?`
+        );
+
+        const buttons = [
+          { id: 'search_apartments', title: '🏢 Browse Apartments' },
+          { id: 'search_houses', title: '🏠 Browse Houses' },
+          { id: 'show_featured', title: '⭐ Featured Properties' }
+        ];
+
+        await this.whatsapp.sendButtonMessage(from, "What type of property interests you?", buttons);
+        return;
+      }
+
+      // Show existing bookings
+      let message = `📅 *Your Bookings* (${bookings.length})\n\n`;
+
+      bookings.forEach((booking, index) => {
+        message += `${index + 1}. 🏠 ${booking.propertyTitle || 'Property Tour'}\n`;
+        message += `   📍 ${booking.location || 'Location TBD'}\n`;
+        message += `   📅 ${booking.date || 'Date TBD'}\n`;
+        message += `   ⏰ ${booking.time || 'Time TBD'}\n`;
+        message += `   📞 Agent: ${booking.agentPhone || 'Contact TBD'}\n\n`;
+      });
+
+      message += `💡 Need to modify a booking? Just let me know which one!`;
+
+      await this.whatsapp.sendTextMessage(from, message);
+
+    } catch (error) {
+      logger.error('Error showing user bookings:', error);
+      await this.whatsapp.sendTextMessage(from, "Sorry, I couldn't load your bookings. Please try again later.");
+    }
+  }
+
+  async startPreferencesSetup(user, conversation, from) {
+    try {
+      await this.whatsapp.sendTextMessage(from,
+        `⚙️ *Set Your Preferences*\n\nLet's customize your property search experience!\n\n🏠 What type of properties are you most interested in?\n\nExample: "I prefer 2-bedroom apartments in Molyko under 100,000 FCFA"`
+      );
+
+      // Update conversation state
+      if (conversation) {
+        conversation.state = 'setting_preferences';
+        await this.conversationService.updateConversation(conversation.id, {
+          state: 'setting_preferences',
+          currentFlow: 'preferences'
+        });
+      }
+
+    } catch (error) {
+      logger.error('Error starting preferences setup:', error);
+      await this.whatsapp.sendTextMessage(from, "Sorry, I couldn't start the preferences setup. Please try again later.");
+    }
+  }
+
   async expandLocationSearch(user, conversation, from) {
     await this.whatsapp.sendTextMessage(from, "🌍 I'll expand the search to nearby areas. Let me find more properties for you...");
     await this.startPropertySearch(user, conversation, from);
@@ -2067,13 +2140,7 @@ Would you like me to:`;
     await this.startPropertySearch(user, conversation, from);
   }
 
-  async confirmBooking(user, conversation, from) {
-    await this.whatsapp.sendTextMessage(from, "✅ Booking confirmed! You'll receive a confirmation message shortly with all the details.");
-  }
 
-  async modifyBooking(user, conversation, from) {
-    await this.whatsapp.sendTextMessage(from, "✏️ Please tell me what you'd like to change about your booking (date, time, etc.)");
-  }
 
   // Property action handlers
   async handleBookTour(user, conversation, from) {

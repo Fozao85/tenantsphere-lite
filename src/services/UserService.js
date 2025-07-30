@@ -192,6 +192,40 @@ class UserService extends DatabaseService {
     }
   }
 
+  // Add property interaction for analytics and recommendations
+  async addPropertyInteraction(userId, interaction) {
+    try {
+      const user = await this.getUser(userId);
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      // Initialize interactions array if it doesn't exist
+      if (!user.interactions) {
+        user.interactions = [];
+      }
+
+      // Add the interaction
+      user.interactions.push({
+        propertyId: interaction.propertyId,
+        action: interaction.action,
+        timestamp: interaction.timestamp || new Date()
+      });
+
+      // Keep only the last 100 interactions to prevent data bloat
+      if (user.interactions.length > 100) {
+        user.interactions = user.interactions.slice(-100);
+      }
+
+      const result = await this.update(this.collection, userId, user.toFirestore());
+      logger.info(`Added property interaction for user ${userId}: ${interaction.action} on property ${interaction.propertyId}`);
+      return result;
+    } catch (error) {
+      logger.error(`Error adding property interaction for user ${userId}:`, error);
+      throw error;
+    }
+  }
+
   // Update conversation state
   async updateConversationState(userId, state) {
     try {
