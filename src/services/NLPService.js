@@ -333,6 +333,47 @@ class NLPService {
     // Remove duplicates and empty strings
     return [...new Set(searchTerms.filter(term => term && term.length > 1))];
   }
+
+  // Extract search terms from user query for matching
+  extractSearchTerms(query) {
+    try {
+      const normalizedQuery = query.toLowerCase().trim();
+      const searchTerms = [];
+
+      // Split query into words and filter out common stop words
+      const stopWords = ['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'can', 'i', 'you', 'he', 'she', 'it', 'we', 'they', 'me', 'him', 'her', 'us', 'them'];
+
+      const words = normalizedQuery.split(/\s+/).filter(word =>
+        word.length > 1 && !stopWords.includes(word)
+      );
+
+      // Add individual words
+      searchTerms.push(...words);
+
+      // Add extracted entities
+      const location = this.extractLocation(normalizedQuery);
+      if (location) searchTerms.push(...location.toLowerCase().split(' '));
+
+      const propertyType = this.extractPropertyType(normalizedQuery);
+      if (propertyType) searchTerms.push(propertyType);
+
+      const amenities = this.extractAmenities(normalizedQuery);
+      if (amenities) searchTerms.push(...amenities);
+
+      // Add bedroom-related terms
+      const bedrooms = this.extractBedrooms(normalizedQuery);
+      if (bedrooms) {
+        searchTerms.push(`${bedrooms.min}bedroom`, `${bedrooms.min}bed`);
+      }
+
+      // Remove duplicates and empty strings
+      return [...new Set(searchTerms.filter(term => term && term.length > 1))];
+
+    } catch (error) {
+      logger.error('Error extracting search terms:', error);
+      return [];
+    }
+  }
 }
 
 module.exports = NLPService;

@@ -1,110 +1,151 @@
-const DatabaseService = require('./DatabaseService');
+const logger = require('../utils/logger');
+const UserService = require('./UserService');
+const PropertyService = require('./PropertyService');
 const WhatsAppService = require('./WhatsAppService');
-const { collections } = require('../config/firebase');
-const Notification = require('../models/Notification');
-const { logger } = require('../utils/logger');
+const RecommendationService = require('./RecommendationService');
 
-class NotificationService extends DatabaseService {
+class NotificationService {
   constructor() {
-    super();
-    this.collection = collections.NOTIFICATIONS;
+    this.userService = new UserService();
+    this.propertyService = new PropertyService();
     this.whatsapp = new WhatsAppService();
+    this.recommendationService = new RecommendationService();
+
+    // Notification types
+    this.notificationTypes = {
+      NEW_PROPERTY: 'new_property',
+      PRICE_DROP: 'price_drop',
+      RECOMMENDATION: 'recommendation',
+      BOOKING_CONFIRMATION: 'booking_confirmation',
+      BOOKING_REMINDER: 'booking_reminder',
+      PROPERTY_UPDATE: 'property_update',
+      MARKETING: 'marketing',
+      SYSTEM: 'system'
+    };
+
+    // Rate limiting settings
+    this.rateLimits = {
+      NEW_PROPERTY: { maxPerDay: 5, cooldownHours: 2 },
+      PRICE_DROP: { maxPerDay: 3, cooldownHours: 4 },
+      RECOMMENDATION: { maxPerDay: 2, cooldownHours: 12 },
+      MARKETING: { maxPerDay: 1, cooldownHours: 24 }
+    };
   }
 
-  // Create a new notification
-  async createNotification(notificationData) {
+  // Send notification to a single user
+  async sendNotification(userId, notificationType, data) {
     try {
-      const notification = new Notification(notificationData);
-      const errors = notification.validate();
-      
-      if (errors.length > 0) {
-        throw new Error(`Validation failed: ${errors.join(', ')}`);
+      logger.info(`Sending ${notificationType} notification to user ${userId}`);
+
+      const user = await this.userService.getUserById(userId);
+      if (!user || !user.optedIn || user.status !== 'active') {
+        logger.info(`User ${userId} not eligible for notifications`);
+        return { sent: false, reason: 'User not opted in or inactive' };
       }
 
-      const result = await this.create(this.collection, notification.toFirestore(), notification.id);
-      logger.info(`Notification created: ${notification.id}`);
-      
-      // If it's immediate, try to send it
-      if (!notification.scheduledFor || notification.isDue()) {
-        await this.sendNotification(notification.id);
+      // Check if user has this notification type enabled
+      if (!this.isNotificationTypeEnabled(user, notificationType)) {
+        logger.info(`Notification type ${notificationType} disabled for user ${userId}`);
+        return { sent: false, reason: 'Notification type disabled' };
       }
-      
-      return result;
+
+      // Check rate limits
+      if (!await this.checkRateLimit(userId, notificationType)) {
+        logger.info(`Rate limit exceeded for ${notificationType} to user ${userId}`);
+        return { sent: false, reason: 'Rate limit exceeded' };
+      }
+
+      // Generate notification content
+      const notification = await this.generateNotificationContent(notificationType, data, user);
+
+      // Send notification
+      await this.deliverNotification(user.phone, notification);
+
+      // Track notification
+      await this.trackNotification(userId, notificationType, data);
+
+      logger.info(`${notificationType} notification sent successfully to user ${userId}`);
+      return { sent: true, notificationId: notification.id };
+
     } catch (error) {
-      logger.error('Error creating notification:', error);
+      logger.error('Error sending notification:', error);
+      return { sent: false, reason: error.message };
+    }
+  }
+
+  // Broadcast notification to multiple users
+  async broadcastNotification(userIds, notificationType, data) {
+    try {
+      logger.info(`Broadcasting ${notificationType} notification to ${userIds.length} users`);
+
+      const results = [];
+      const batchSize = 10; // Process in batches to avoid overwhelming the system
+
+      for (let i = 0; i < userIds.length; i += batchSize) {
+        const batch = userIds.slice(i, i + batchSize);
+        const batchPromises = batch.map(userId =>
+          this.sendNotification(userId, notificationType, data)
+        );
+
+        const batchResults = await Promise.allSettled(batchPromises);
+        results.push(...batchResults.map((result, index) => ({
+          userId: batch[index],
+          ...result.value
+        })));
+
+        // Small delay between batches to respect rate limits
+        if (i + batchSize < userIds.length) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+
+      const successCount = results.filter(r => r.sent).length;
+      logger.info(`Broadcast complete: ${successCount}/${userIds.length} notifications sent`);
+
+      return {
+        totalUsers: userIds.length,
+        successCount,
+        failureCount: userIds.length - successCount,
+        results
+      };
+
+    } catch (error) {
+      logger.error('Error broadcasting notification:', error);
       throw error;
     }
   }
 
-  // Get notification by ID
-  async getNotification(id) {
+  // Notify users about new properties matching their preferences
+  async notifyNewProperty(propertyId) {
     try {
-      const data = await this.getById(this.collection, id);
-      return data ? Notification.fromFirestore({ id: data.id, data: () => data }) : null;
+      logger.info(`Processing new property notifications for property ${propertyId}`);
+
+      const property = await this.propertyService.getPropertyById(propertyId);
+      if (!property) {
+        throw new Error('Property not found');
+      }
+
+      // Get users who might be interested in this property
+      const interestedUsers = await this.findInterestedUsers(property);
+
+      if (interestedUsers.length === 0) {
+        logger.info('No interested users found for new property');
+        return { notified: 0 };
+      }
+
+      // Send notifications
+      const results = await this.broadcastNotification(
+        interestedUsers.map(u => u.id),
+        this.notificationTypes.NEW_PROPERTY,
+        { property }
+      );
+
+      logger.info(`New property notifications sent: ${results.successCount} users notified`);
+      return { notified: results.successCount };
+
     } catch (error) {
-      logger.error(`Error getting notification ${id}:`, error);
+      logger.error('Error notifying new property:', error);
       throw error;
-    }
-  }
-
-  // Send a notification
-  async sendNotification(notificationId) {
-    try {
-      const notification = await this.getNotification(notificationId);
-      if (!notification) {
-        throw new Error('Notification not found');
-      }
-
-      if (notification.status !== 'pending') {
-        logger.warn(`Notification ${notificationId} is not pending, current status: ${notification.status}`);
-        return;
-      }
-
-      if (!notification.isDue()) {
-        logger.warn(`Notification ${notificationId} is not due yet, scheduled for: ${notification.scheduledFor}`);
-        return;
-      }
-
-      // Get user's WhatsApp ID
-      const UserService = require('./UserService');
-      const userService = new UserService();
-      const user = await userService.getUser(notification.userId);
-      
-      if (!user) {
-        await this.markNotificationFailed(notificationId, 'User not found');
-        return;
-      }
-
-      if (!user.optedIn) {
-        await this.markNotificationFailed(notificationId, 'User has opted out');
-        return;
-      }
-
-      // Send based on channel
-      let result;
-      switch (notification.channel) {
-        case 'whatsapp':
-          result = await this.sendWhatsAppNotification(notification, user);
-          break;
-        case 'email':
-          result = await this.sendEmailNotification(notification, user);
-          break;
-        case 'sms':
-          result = await this.sendSMSNotification(notification, user);
-          break;
-        default:
-          throw new Error(`Unsupported notification channel: ${notification.channel}`);
-      }
-
-      if (result.success) {
-        await this.markNotificationSent(notificationId, result.messageId);
-      } else {
-        await this.markNotificationFailed(notificationId, result.error);
-      }
-
-    } catch (error) {
-      logger.error(`Error sending notification ${notificationId}:`, error);
-      await this.markNotificationFailed(notificationId, error.message);
     }
   }
 

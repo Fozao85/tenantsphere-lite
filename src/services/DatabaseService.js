@@ -3,7 +3,147 @@ const { logger } = require('../utils/logger');
 
 class DatabaseService {
   constructor() {
-    this.db = getFirestore();
+    try {
+      this.db = getFirestore();
+      this.isAvailable = true;
+    } catch (error) {
+      logger.warn('Firebase not available, using mock database:', error.message);
+      this.db = this.createMockDatabase();
+      this.isAvailable = false;
+    }
+  }
+
+  // Create a mock database for testing/development
+  createMockDatabase() {
+    const mockData = new Map();
+
+    // Add some sample properties for testing
+    this.addSampleProperties(mockData);
+
+    return {
+      collection: (collectionName) => ({
+        doc: (id) => ({
+          get: async () => {
+            const key = `${collectionName}/${id}`;
+            const data = mockData.get(key);
+            return {
+              exists: !!data,
+              id: id,
+              data: () => data || {}
+            };
+          },
+          set: async (data) => {
+            const key = `${collectionName}/${id}`;
+            mockData.set(key, data);
+            return { id };
+          },
+          update: async (data) => {
+            const key = `${collectionName}/${id}`;
+            const existing = mockData.get(key) || {};
+            mockData.set(key, { ...existing, ...data });
+            return { id };
+          },
+          delete: async () => {
+            const key = `${collectionName}/${id}`;
+            mockData.delete(key);
+            return { id };
+          }
+        }),
+        add: async (data) => {
+          const id = 'mock_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+          const key = `${collectionName}/${id}`;
+          mockData.set(key, data);
+          return { id };
+        },
+        get: async () => {
+          const docs = [];
+          for (const [key, data] of mockData.entries()) {
+            if (key.startsWith(`${collectionName}/`)) {
+              const id = key.split('/')[1];
+              docs.push({
+                id,
+                data: () => data,
+                exists: true
+              });
+            }
+          }
+          return {
+            empty: docs.length === 0,
+            docs,
+            forEach: (callback) => docs.forEach(callback)
+          };
+        },
+        where: () => ({
+          get: async () => ({ empty: true, docs: [], forEach: () => {} }),
+          limit: () => ({ get: async () => ({ empty: true, docs: [], forEach: () => {} }) })
+        }),
+        limit: () => ({
+          get: async () => ({ empty: true, docs: [], forEach: () => {} })
+        })
+      })
+    };
+  }
+
+  // Add sample properties for testing
+  addSampleProperties(mockData) {
+    const sampleProperties = [
+      {
+        id: 'prop_001',
+        title: 'Modern 2-Bedroom Apartment in Molyko',
+        description: 'Beautiful apartment with mountain views, fully furnished',
+        location: 'Molyko, Buea',
+        propertyType: 'apartment',
+        price: 75000,
+        bedrooms: 2,
+        bathrooms: 1,
+        amenities: ['wifi', 'parking', 'generator', 'security'],
+        agentName: 'John Doe',
+        agentPhone: '+237671234567',
+        status: 'available',
+        images: ['https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&h=600&fit=crop'],
+        createdAt: new Date().toISOString()
+      },
+      {
+        id: 'prop_002',
+        title: 'Cozy Studio in Great Soppo',
+        description: 'Perfect for students, close to university',
+        location: 'Great Soppo, Buea',
+        propertyType: 'studio',
+        price: 35000,
+        bedrooms: 0,
+        bathrooms: 1,
+        amenities: ['wifi', 'water', 'security'],
+        agentName: 'Jane Smith',
+        agentPhone: '+237677654321',
+        status: 'available',
+        images: ['https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=800&h=600&fit=crop'],
+        createdAt: new Date().toISOString()
+      },
+      {
+        id: 'prop_003',
+        title: 'Spacious 3-Bedroom House',
+        description: 'Family house with garden and parking',
+        location: 'Bonduma, Buea',
+        propertyType: 'house',
+        price: 120000,
+        bedrooms: 3,
+        bathrooms: 2,
+        amenities: ['parking', 'garden', 'generator', 'security', 'water'],
+        agentName: 'Mike Johnson',
+        agentPhone: '+237681234567',
+        status: 'available',
+        images: ['https://images.unsplash.com/photo-1449824913935-59a10b8d2000?w=800&h=600&fit=crop'],
+        createdAt: new Date().toISOString()
+      }
+    ];
+
+    // Add properties to mock database
+    sampleProperties.forEach(property => {
+      const key = `properties/${property.id}`;
+      mockData.set(key, property);
+    });
+
+    logger.info(`Added ${sampleProperties.length} sample properties to mock database`);
   }
 
   // Generic CRUD operations

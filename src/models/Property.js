@@ -28,7 +28,7 @@ class Property {
 
   // Convert to Firestore document
   toFirestore() {
-    return {
+    const data = {
       id: this.id,
       title: this.title,
       description: this.description,
@@ -52,6 +52,16 @@ class Property {
       viewCount: this.viewCount,
       bookingCount: this.bookingCount
     };
+
+    // Filter out undefined values to avoid Firestore errors
+    const filteredData = {};
+    Object.keys(data).forEach(key => {
+      if (data[key] !== undefined) {
+        filteredData[key] = data[key];
+      }
+    });
+
+    return filteredData;
   }
 
   // Create from Firestore document
@@ -79,9 +89,10 @@ class Property {
       errors.push('Price must be greater than 0');
     }
 
-    if (!this.agentId || this.agentId.trim().length === 0) {
-      errors.push('Agent ID is required');
-    }
+    // Agent ID is now optional
+    // if (!this.agentId || this.agentId.trim().length === 0) {
+    //   errors.push('Agent ID is required');
+    // }
 
     if (!this.propertyType || this.propertyType.trim().length === 0) {
       errors.push('Property type is required');

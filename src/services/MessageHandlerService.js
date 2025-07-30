@@ -568,14 +568,50 @@ What would you like to do?`;
     try {
       logger.info(`Processing search query from ${from}: "${messageText}"`);
 
+      // Handle greeting messages
+      if (this.isGreeting(messageText)) {
+        await this.sendWelcomeMessage(from);
+        return;
+      }
+
       // Use NLP to parse the user's query
-      const searchCriteria = this.nlpService.parseUserQuery(messageText);
+      let searchCriteria;
+      try {
+        searchCriteria = this.nlpService.parseUserQuery(messageText);
+        logger.info('Search criteria parsed successfully:', searchCriteria);
+      } catch (nlpError) {
+        logger.error('Error parsing search query with NLP:', nlpError);
+        searchCriteria = { intent: 'search' };
+      }
 
       // Get user preferences for better ranking
       const userPreferences = user.preferences || {};
 
       // Search properties using intelligent search
-      const properties = await this.propertySearchService.searchProperties(searchCriteria, userPreferences);
+      let properties = [];
+      try {
+        properties = await this.propertySearchService.searchProperties(searchCriteria, userPreferences);
+        logger.info(`Property search completed, found ${properties.length} properties`);
+      } catch (searchError) {
+        logger.error('Error in property search service:', {
+          message: searchError.message,
+          stack: searchError.stack,
+          searchCriteria: searchCriteria
+        });
+
+        // Try fallback search
+        try {
+          properties = await this.fallbackSearch(messageText);
+          logger.info(`Fallback search completed, found ${properties.length} properties`);
+        } catch (fallbackError) {
+          logger.error('Fallback search also failed:', fallbackError);
+          await this.whatsapp.sendTextMessage(from,
+            "I'm having trouble searching right now. Let me show you some featured properties instead!"
+          );
+          await this.showFeaturedProperties(from);
+          return;
+        }
+      }
 
       if (properties.length === 0) {
         await this.handleNoResults(user, conversation, messageText, from, searchCriteria);
@@ -586,9 +622,93 @@ What would you like to do?`;
       await this.sendPropertyResults(user, conversation, properties, from);
 
     } catch (error) {
-      logger.error('Error processing search query:', error);
+      logger.error('Error processing search query:', {
+        message: error.message,
+        stack: error.stack,
+        from: from,
+        messageText: messageText
+      });
+
       await this.whatsapp.sendTextMessage(from,
-        "Sorry, I encountered an error while searching. Please try again or contact support."
+        "Sorry, I encountered an error while searching. Let me show you some available properties instead!"
+      );
+
+      // Try to show some properties as fallback
+      try {
+        await this.showFeaturedProperties(from);
+      } catch (fallbackError) {
+        logger.error('Even fallback failed:', fallbackError);
+        await this.whatsapp.sendTextMessage(from,
+          "I'm experiencing technical difficulties. Please try again in a few minutes or contact support."
+        );
+      }
+    }
+  }
+
+  // Check if message is a greeting
+  isGreeting(messageText) {
+    const greetings = ['hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening', 'greetings'];
+    const normalizedText = messageText.toLowerCase().trim();
+    return greetings.some(greeting => normalizedText === greeting || normalizedText.startsWith(greeting + ' '));
+  }
+
+  // Send welcome message
+  async sendWelcomeMessage(from) {
+    const welcomeMessage = `👋 Hello! Welcome to TenantSphere!
+
+I'm here to help you find the perfect rental property in Buea.
+
+🏠 *What I can help you with:*
+• Find apartments, houses, studios, and more
+• Search by location, price, and amenities
+• Book property tours
+• Get property recommendations
+
+🔍 *Try searching like this:*
+• "2 bedroom apartment in Molyko"
+• "Cheap studio with parking"
+• "House under 100000 in Great Soppo"
+
+What type of property are you looking for?`;
+
+    const buttons = [
+      { id: 'search_apartments', title: '🏢 Apartments' },
+      { id: 'search_houses', title: '🏠 Houses' },
+      { id: 'show_featured', title: '⭐ Featured' }
+    ];
+
+    await this.whatsapp.sendButtonMessage(from, welcomeMessage, buttons);
+  }
+
+  // Fallback search when main search fails
+  async fallbackSearch(messageText) {
+    try {
+      // Simple text-based search using PropertyService
+      const properties = await this.propertyService.searchProperties(messageText);
+      return properties || [];
+    } catch (error) {
+      logger.error('Fallback search failed:', error);
+      return [];
+    }
+  }
+
+  // Show featured properties
+  async showFeaturedProperties(from) {
+    try {
+      // Get some sample properties
+      const properties = await this.propertyService.getAllProperties({ limit: 5 });
+
+      if (properties && properties.length > 0) {
+        await this.sendPropertyResults(null, null, properties, from);
+      } else {
+        await this.whatsapp.sendTextMessage(from,
+          "I don't have any properties to show right now. Please check back later or contact our support team."
+        );
+      }
+    } catch (error) {
+      logger.error('Error showing featured properties:', error);
+      await this.whatsapp.sendTextMessage(from,
+        "I'm having trouble loading properties right now. Please try again later."
       );
     }
   }
@@ -1289,12 +1409,22 @@ Would you like me to:`;
 
       // Add search-specific data if it's a search interaction
       if (flowResult.flow === 'property_search' && messageData.type === 'text') {
-        const searchTerms = await this.nlpService.extractSearchTerms(this.extractMessageContent(messageData));
-        interaction.searchTerms = searchTerms;
-        interaction.searchMethod = 'text';
+        try {
+          const messageContent = this.extractMessageContent(messageData);
+          const searchTerms = this.nlpService.extractSearchTerms(messageContent);
+          interaction.searchTerms = searchTerms;
+          interaction.searchMethod = 'text';
+        } catch (searchTermsError) {
+          logger.warn('Could not extract search terms:', searchTermsError.message);
+          interaction.searchTerms = [];
+        }
       }
 
-      await this.preferenceLearningService.learnFromInteraction(user.id, interaction);
+      try {
+        await this.preferenceLearningService.learnFromInteraction(user.id, interaction);
+      } catch (learningError) {
+        logger.warn('Could not learn from interaction:', learningError.message);
+      }
 
     } catch (error) {
       logger.warn('Could not learn from interaction:', error.message);
