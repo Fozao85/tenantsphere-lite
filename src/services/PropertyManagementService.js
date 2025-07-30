@@ -1,4 +1,4 @@
-const logger = require('../utils/logger');
+const { logger } = require('../utils/logger');
 const PropertyService = require('./PropertyService');
 const UserService = require('./UserService');
 const WhatsAppService = require('./WhatsAppService');

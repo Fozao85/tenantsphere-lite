@@ -52,11 +52,28 @@ class MessageHandlerService {
 
       // Determine conversation flow
       const messageText = this.extractMessageContent(messageData);
-      const flowResult = await this.conversationFlowService.determineFlow(
-        user, conversation, messageText, type
-      );
-
-      logger.info(`Flow determined: ${flowResult.flow} - ${flowResult.state} (${flowResult.action})`);
+      let flowResult;
+      try {
+        flowResult = await this.conversationFlowService.determineFlow(
+          user, conversation, messageText, type
+        );
+        logger.info(`Flow determined: ${flowResult.flow} - ${flowResult.state} (${flowResult.action})`);
+      } catch (flowError) {
+        logger.error('Error determining conversation flow:', {
+          message: flowError.message,
+          stack: flowError.stack,
+          user: user.id,
+          conversation: conversation.id,
+          messageText: messageText
+        });
+        // Fallback to default flow
+        flowResult = {
+          flow: 'property_search',
+          state: 'initial',
+          action: 'initiated'
+        };
+        logger.info(`Using fallback flow: ${flowResult.flow} - ${flowResult.state} (${flowResult.action})`);
+      }
 
       // Process based on message type with flow context
       switch (type) {
@@ -77,7 +94,17 @@ class MessageHandlerService {
       }
 
       // Learn from user interaction
-      await this.learnFromInteraction(user, messageData, flowResult);
+      try {
+        await this.learnFromInteraction(user, messageData, flowResult);
+      } catch (learningError) {
+        logger.error('Error learning from interaction:', {
+          message: learningError.message,
+          stack: learningError.stack,
+          user: user.id,
+          messageType: messageData.type,
+          flow: flowResult.flow
+        });
+      }
 
     } catch (error) {
       logger.error('Error processing message:', {

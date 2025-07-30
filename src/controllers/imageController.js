@@ -1,6 +1,6 @@
 const ImageService = require('../services/ImageService');
 const PropertyService = require('../services/PropertyService');
-const logger = require('../utils/logger');
+const { logger } = require('../utils/logger');
 
 // Initialize services lazily
 let imageService = null;

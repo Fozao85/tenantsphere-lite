@@ -1,6 +1,6 @@
 const express = require('express');
 const request = require('supertest');
-const logger = require('./src/utils/logger');
+const { logger } = require('./src/utils/logger');
 
 // Import our main app
 const app = require('./src/server');

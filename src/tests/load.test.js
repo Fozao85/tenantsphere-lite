@@ -1,6 +1,6 @@
 const request = require('supertest');
 const app = require('../server');
-const logger = require('../utils/logger');
+const { logger } = require('../utils/logger');
 
 describe('TenantSphere Load Tests', () => {
   let server;

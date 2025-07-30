@@ -3,7 +3,7 @@ const PropertySearchService = require('../services/PropertySearchService');
 const RecommendationService = require('../services/RecommendationService');
 const PreferenceLearningService = require('../services/PreferenceLearningService');
 const ConversationFlowService = require('../services/ConversationFlowService');
-const logger = require('../utils/logger');
+const { logger } = require('../utils/logger');
 
 describe('TenantSphere Unit Tests', () => {
 
