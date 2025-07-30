@@ -39,7 +39,7 @@ class PreferenceLearningService {
 
       logger.info(`Learning from interaction: ${interaction.action} by user ${userId}`);
 
-      const user = await this.userService.getUserById(userId);
+      const user = await this.userService.getUser(userId);
       if (!user) {
         logger.warn(`User ${userId} not found for preference learning`);
         return;
