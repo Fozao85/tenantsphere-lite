@@ -73,13 +73,247 @@ class DatabaseService {
             forEach: (callback) => docs.forEach(callback)
           };
         },
-        where: () => ({
-          get: async () => ({ empty: true, docs: [], forEach: () => {} }),
-          limit: () => ({ get: async () => ({ empty: true, docs: [], forEach: () => {} }) })
-        }),
-        limit: () => ({
-          get: async () => ({ empty: true, docs: [], forEach: () => {} })
-        })
+        where: function(field, operator, value) {
+          const query = {
+            _filters: [...(this._filters || []), { field, operator, value }],
+            _orderBy: this._orderBy,
+            _limit: this._limit,
+            where: function(field, operator, value) {
+              return {
+                ...this,
+                _filters: [...(this._filters || []), { field, operator, value }]
+              };
+            },
+            orderBy: function(field, direction = 'asc') {
+              return {
+                ...this,
+                _orderBy: { field, direction }
+              };
+            },
+            limit: function(limitValue) {
+              return {
+                ...this,
+                _limit: limitValue
+              };
+            },
+            get: async function() {
+              let docs = [];
+              for (const [key, data] of mockData.entries()) {
+                if (key.startsWith(`${collectionName}/`)) {
+                  const id = key.split('/')[1];
+                  docs.push({
+                    id,
+                    data: () => data,
+                    exists: true
+                  });
+                }
+              }
+
+              // Apply filters
+              if (this._filters) {
+                docs = docs.filter(doc => {
+                  const data = doc.data();
+                  return this._filters.every(filter => {
+                    const fieldValue = data[filter.field];
+                    switch (filter.operator) {
+                      case '==': return fieldValue === filter.value;
+                      case '!=': return fieldValue !== filter.value;
+                      case '>': return fieldValue > filter.value;
+                      case '>=': return fieldValue >= filter.value;
+                      case '<': return fieldValue < filter.value;
+                      case '<=': return fieldValue <= filter.value;
+                      case 'in': return filter.value.includes(fieldValue);
+                      case 'array-contains': return Array.isArray(fieldValue) && fieldValue.includes(filter.value);
+                      default: return true;
+                    }
+                  });
+                });
+              }
+
+              // Apply ordering
+              if (this._orderBy) {
+                docs.sort((a, b) => {
+                  const aVal = a.data()[this._orderBy.field];
+                  const bVal = b.data()[this._orderBy.field];
+                  const comparison = aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+                  return this._orderBy.direction === 'desc' ? -comparison : comparison;
+                });
+              }
+
+              // Apply limit
+              if (this._limit) {
+                docs = docs.slice(0, this._limit);
+              }
+
+              return {
+                empty: docs.length === 0,
+                docs,
+                forEach: (callback) => docs.forEach(callback)
+              };
+            }
+          };
+          return query;
+        },
+        orderBy: function(field, direction = 'asc') {
+          return {
+            _orderBy: { field, direction },
+            _filters: this._filters,
+            _limit: this._limit,
+            where: function(field, operator, value) {
+              return {
+                ...this,
+                _filters: [...(this._filters || []), { field, operator, value }]
+              };
+            },
+            orderBy: function(field, direction = 'asc') {
+              return {
+                ...this,
+                _orderBy: { field, direction }
+              };
+            },
+            limit: function(limitValue) {
+              return {
+                ...this,
+                _limit: limitValue
+              };
+            },
+            get: async function() {
+              let docs = [];
+              for (const [key, data] of mockData.entries()) {
+                if (key.startsWith(`${collectionName}/`)) {
+                  const id = key.split('/')[1];
+                  docs.push({
+                    id,
+                    data: () => data,
+                    exists: true
+                  });
+                }
+              }
+
+              // Apply filters
+              if (this._filters) {
+                docs = docs.filter(doc => {
+                  const data = doc.data();
+                  return this._filters.every(filter => {
+                    const fieldValue = data[filter.field];
+                    switch (filter.operator) {
+                      case '==': return fieldValue === filter.value;
+                      case '!=': return fieldValue !== filter.value;
+                      case '>': return fieldValue > filter.value;
+                      case '>=': return fieldValue >= filter.value;
+                      case '<': return fieldValue < filter.value;
+                      case '<=': return fieldValue <= filter.value;
+                      case 'in': return filter.value.includes(fieldValue);
+                      case 'array-contains': return Array.isArray(fieldValue) && fieldValue.includes(filter.value);
+                      default: return true;
+                    }
+                  });
+                });
+              }
+
+              // Apply ordering
+              if (this._orderBy) {
+                docs.sort((a, b) => {
+                  const aVal = a.data()[this._orderBy.field];
+                  const bVal = b.data()[this._orderBy.field];
+                  const comparison = aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+                  return this._orderBy.direction === 'desc' ? -comparison : comparison;
+                });
+              }
+
+              // Apply limit
+              if (this._limit) {
+                docs = docs.slice(0, this._limit);
+              }
+
+              return {
+                empty: docs.length === 0,
+                docs,
+                forEach: (callback) => docs.forEach(callback)
+              };
+            }
+          };
+        },
+        limit: function(limitValue) {
+          return {
+            _limit: limitValue,
+            _filters: this._filters,
+            _orderBy: this._orderBy,
+            where: function(field, operator, value) {
+              return {
+                ...this,
+                _filters: [...(this._filters || []), { field, operator, value }]
+              };
+            },
+            orderBy: function(field, direction = 'asc') {
+              return {
+                ...this,
+                _orderBy: { field, direction }
+              };
+            },
+            limit: function(limitValue) {
+              return {
+                ...this,
+                _limit: limitValue
+              };
+            },
+            get: async function() {
+              let docs = [];
+              for (const [key, data] of mockData.entries()) {
+                if (key.startsWith(`${collectionName}/`)) {
+                  const id = key.split('/')[1];
+                  docs.push({
+                    id,
+                    data: () => data,
+                    exists: true
+                  });
+                }
+              }
+
+              // Apply filters
+              if (this._filters) {
+                docs = docs.filter(doc => {
+                  const data = doc.data();
+                  return this._filters.every(filter => {
+                    const fieldValue = data[filter.field];
+                    switch (filter.operator) {
+                      case '==': return fieldValue === filter.value;
+                      case '!=': return fieldValue !== filter.value;
+                      case '>': return fieldValue > filter.value;
+                      case '>=': return fieldValue >= filter.value;
+                      case '<': return fieldValue < filter.value;
+                      case '<=': return fieldValue <= filter.value;
+                      case 'in': return filter.value.includes(fieldValue);
+                      case 'array-contains': return Array.isArray(fieldValue) && fieldValue.includes(filter.value);
+                      default: return true;
+                    }
+                  });
+                });
+              }
+
+              // Apply ordering
+              if (this._orderBy) {
+                docs.sort((a, b) => {
+                  const aVal = a.data()[this._orderBy.field];
+                  const bVal = b.data()[this._orderBy.field];
+                  const comparison = aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+                  return this._orderBy.direction === 'desc' ? -comparison : comparison;
+                });
+              }
+
+              // Apply limit
+              if (this._limit) {
+                docs = docs.slice(0, this._limit);
+              }
+
+              return {
+                empty: docs.length === 0,
+                docs,
+                forEach: (callback) => docs.forEach(callback)
+              };
+            }
+          };
+        }
       })
     };
   }
