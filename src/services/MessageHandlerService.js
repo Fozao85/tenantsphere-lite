@@ -439,6 +439,34 @@ class MessageHandlerService {
           await this.searchEssentialOnly(user, conversation, from);
           break;
 
+        // Property action buttons
+        case 'book_tour':
+          await this.handleBookTour(user, conversation, from);
+          break;
+        case 'save_property':
+          await this.handleSaveProperty(user, conversation, from);
+          break;
+        case 'view_details':
+          await this.handleViewDetails(user, conversation, from);
+          break;
+        case 'share_property':
+          await this.handleShareProperty(user, conversation, from);
+          break;
+
+        // Property action buttons
+        case 'book_tour':
+          await this.handleBookTour(user, conversation, from);
+          break;
+        case 'save_property':
+          await this.handleSaveProperty(user, conversation, from);
+          break;
+        case 'view_details':
+          await this.handleViewDetails(user, conversation, from);
+          break;
+        case 'share_property':
+          await this.handleShareProperty(user, conversation, from);
+          break;
+
         // Contact and support actions
         case 'send_requirements':
           await this.sendRequirementsToAgent(user, conversation, from);
@@ -1922,6 +1950,88 @@ Would you like me to:`;
 
   async modifyBooking(user, conversation, from) {
     await this.whatsapp.sendTextMessage(from, "✏️ Please tell me what you'd like to change about your booking (date, time, etc.)");
+  }
+
+  // Property action handlers
+  async handleBookTour(user, conversation, from) {
+    try {
+      await this.whatsapp.sendTextMessage(from,
+        "📅 *Book a Property Tour*\n\nGreat choice! I'll help you schedule a tour.\n\nPlease provide:\n• Your preferred date and time\n• Any specific requirements\n\nExample: 'Tomorrow at 2 PM, need parking space'"
+      );
+
+      // Update conversation state to expect tour booking details
+      if (conversation) {
+        conversation.state = 'booking_tour';
+        await this.conversationService.updateConversation(conversation.id, { state: 'booking_tour' });
+      }
+    } catch (error) {
+      logger.error('Error handling book tour:', error);
+      await this.whatsapp.sendTextMessage(from, "Sorry, I couldn't process your tour booking request. Please try again or contact our agents directly.");
+    }
+  }
+
+  async handleSaveProperty(user, conversation, from) {
+    try {
+      // Add property to user's saved list
+      if (!user.savedProperties) {
+        user.savedProperties = [];
+      }
+
+      // Get the current property ID from conversation context
+      const propertyId = conversation?.currentPropertyId || 'current_property';
+
+      if (!user.savedProperties.includes(propertyId)) {
+        user.savedProperties.push(propertyId);
+        await this.userService.updateUser(user.id, { savedProperties: user.savedProperties });
+
+        await this.whatsapp.sendTextMessage(from,
+          "💾 *Property Saved!*\n\nThis property has been added to your saved list.\n\nYou can view all your saved properties anytime by typing 'my saved properties'."
+        );
+      } else {
+        await this.whatsapp.sendTextMessage(from,
+          "📋 This property is already in your saved list!\n\nType 'my saved properties' to see all your saved properties."
+        );
+      }
+    } catch (error) {
+      logger.error('Error saving property:', error);
+      await this.whatsapp.sendTextMessage(from, "Sorry, I couldn't save this property. Please try again.");
+    }
+  }
+
+  async handleViewDetails(user, conversation, from) {
+    try {
+      await this.whatsapp.sendTextMessage(from,
+        "🔍 *Detailed Property Information*\n\nI'll send you comprehensive details about this property including:\n• Full description\n• Amenities list\n• Location details\n• Pricing breakdown\n• Contact information\n\nPlease wait a moment..."
+      );
+
+      // Here you would typically fetch and send detailed property information
+      // For now, we'll send a placeholder response
+      setTimeout(async () => {
+        await this.whatsapp.sendTextMessage(from,
+          "📋 *Property Details*\n\n🏠 **Type:** Modern Studio Apartment\n📍 **Location:** Molyko, Buea\n💰 **Price:** 500,000 FCFA/month\n🛏️ **Bedrooms:** 1\n🚿 **Bathrooms:** 1\n\n**Amenities:**\n• WiFi included\n• 24/7 security\n• Parking space\n• Water supply\n\n**Contact:** +237 6XX XXX XXX\n\nWould you like to book a tour or get more information?"
+        );
+      }, 1000);
+    } catch (error) {
+      logger.error('Error viewing property details:', error);
+      await this.whatsapp.sendTextMessage(from, "Sorry, I couldn't load the property details. Please try again.");
+    }
+  }
+
+  async handleShareProperty(user, conversation, from) {
+    try {
+      await this.whatsapp.sendTextMessage(from,
+        "📤 *Share Property*\n\nI can help you share this property!\n\nPlease provide the contact details (phone number or email) of the person you'd like to share this with.\n\nExample: '+237 6XX XXX XXX' or 'friend@email.com'"
+      );
+
+      // Update conversation state to expect sharing details
+      if (conversation) {
+        conversation.state = 'sharing_property';
+        await this.conversationService.updateConversation(conversation.id, { state: 'sharing_property' });
+      }
+    } catch (error) {
+      logger.error('Error handling share property:', error);
+      await this.whatsapp.sendTextMessage(from, "Sorry, I couldn't process the sharing request. Please try again.");
+    }
   }
 }
 

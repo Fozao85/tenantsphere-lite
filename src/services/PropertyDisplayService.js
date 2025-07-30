@@ -79,25 +79,33 @@ class PropertyDisplayService {
 
       // Send main property image if available
       if (property.images && property.images.length > 0) {
-        await this.whatsapp.sendImageMessage(from, property.images[0], message);
-        
-        // If multiple images, offer gallery view
-        if (property.images.length > 1) {
-          const galleryMessage = `📸 This property has ${property.images.length} photos. Would you like to see them all?`;
-          const galleryButtons = [
-            { id: `gallery_${property.id}`, title: '📸 View Gallery' },
-            { id: `details_${property.id}`, title: '📋 More Details' },
-            { id: `book_${property.id}`, title: '📅 Book Tour' }
-          ];
-          
-          await this.whatsapp.sendButtonMessage(from, galleryMessage, galleryButtons);
+        const imageUrl = this.getImageUrl(property.images[0]);
+        if (imageUrl) {
+          await this.whatsapp.sendImageMessage(from, imageUrl, message);
+
+          // If multiple images, offer gallery view
+          if (property.images.length > 1) {
+            const galleryMessage = `📸 This property has ${property.images.length} photos. Would you like to see them all?`;
+            const galleryButtons = [
+              { id: `gallery_${property.id}`, title: '📸 View Gallery' },
+              { id: `details_${property.id}`, title: '📋 More Details' },
+              { id: `book_${property.id}`, title: '📅 Book Tour' }
+            ];
+
+            await this.whatsapp.sendButtonMessage(from, galleryMessage, galleryButtons);
+          } else {
+            // Single image - show action buttons
+            await this.sendPropertyActionButtons(property, from);
+          }
         } else {
-          // Single image - show action buttons
+          // Image URL invalid - send text message with action buttons
+          await this.whatsapp.sendTextMessage(from, message);
           await this.sendPropertyActionButtons(property, from);
         }
       } else {
         // No images - send text with action buttons
-        await this.whatsapp.sendButtonMessage(from, message, this.getPropertyActionButtons(property));
+        await this.whatsapp.sendTextMessage(from, message);
+        await this.sendPropertyActionButtons(property, from);
       }
 
     } catch (error) {
@@ -120,12 +128,15 @@ class PropertyDisplayService {
 
       // Send each image with caption
       for (let i = 0; i < property.images.length; i++) {
-        const caption = `📸 Photo ${i + 1} of ${property.images.length}`;
-        await this.whatsapp.sendImageMessage(from, property.images[i], caption);
-        
-        // Small delay between images to avoid rate limiting
-        if (i < property.images.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
+        const imageUrl = this.getImageUrl(property.images[i]);
+        if (imageUrl) {
+          const caption = `📸 Photo ${i + 1} of ${property.images.length}`;
+          await this.whatsapp.sendImageMessage(from, imageUrl, caption);
+
+          // Small delay between images to avoid rate limiting
+          if (i < property.images.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
         }
       }
 
@@ -309,6 +320,45 @@ class PropertyDisplayService {
     };
 
     return amenityMap[amenity.toLowerCase()] || `✨ ${amenity}`;
+  }
+  // Helper method to get image URL from image object or string
+  getImageUrl(image) {
+    if (!image) return null;
+
+    // If it's already a string URL, return it
+    if (typeof image === 'string') {
+      // Handle relative URLs by converting to full URLs
+      if (image.startsWith('/uploads/')) {
+        return `${process.env.BASE_URL || 'http://localhost:3000'}${image}`;
+      }
+      return image;
+    }
+
+    // If it's an image object with url property
+    if (image.url) {
+      if (image.url.startsWith('/uploads/')) {
+        return `${process.env.BASE_URL || 'http://localhost:3000'}${image.url}`;
+      }
+      return image.url;
+    }
+
+    // If it's an image object with filename
+    if (image.filename) {
+      return `${process.env.BASE_URL || 'http://localhost:3000'}/uploads/properties/${image.filename}`;
+    }
+
+    return null;
+  }
+
+  // Helper method to get all image URLs from property
+  getPropertyImageUrls(property) {
+    if (!property.images || property.images.length === 0) {
+      return [];
+    }
+
+    return property.images
+      .map(image => this.getImageUrl(image))
+      .filter(url => url !== null);
   }
 }
 

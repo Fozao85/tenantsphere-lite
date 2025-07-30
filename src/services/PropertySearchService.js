@@ -18,27 +18,60 @@ class PropertySearchService extends DatabaseService {
         // Use Firestore for real database
         logger.info('Using Firestore database for search');
 
-        // Build query based on criteria
-        let query = this.db.collection(this.collection);
+        try {
+          // Try simple query first to avoid index issues
+          let query = this.db.collection(this.collection);
 
-        // Apply filters
-        query = this.applyLocationFilter(query, searchCriteria.location);
-        query = this.applyPriceFilter(query, searchCriteria.priceRange);
-        query = this.applyPropertyTypeFilter(query, searchCriteria.propertyType);
-        query = this.applyBedroomFilter(query, searchCriteria.bedrooms);
-        query = this.applyAmenitiesFilter(query, searchCriteria.amenities);
-        query = this.applyAvailabilityFilter(query, searchCriteria.availability);
+          // Apply only one filter at a time to avoid composite index requirements
+          if (searchCriteria.propertyType) {
+            query = query.where('propertyType', '==', searchCriteria.propertyType);
+          } else if (searchCriteria.location) {
+            // Use simple location search without array-contains
+            query = query.where('location', '>=', searchCriteria.location.toLowerCase())
+                         .where('location', '<=', searchCriteria.location.toLowerCase() + '\uf8ff');
+          } else {
+            query = query.where('status', '==', 'available');
+          }
 
-        // Execute query
-        const snapshot = await query.limit(20).get();
+          // Execute query
+          const snapshot = await query.limit(20).get();
 
-        if (!snapshot.empty) {
-          snapshot.forEach(doc => {
-            properties.push({
-              id: doc.id,
-              ...doc.data()
+          if (!snapshot.empty) {
+            const allProperties = [];
+            snapshot.forEach(doc => {
+              allProperties.push({
+                id: doc.id,
+                ...doc.data()
+              });
             });
-          });
+
+            // Filter in memory for additional criteria
+            properties = this.filterPropertiesInMemory(allProperties, searchCriteria);
+          }
+        } catch (firestoreError) {
+          logger.error('Firestore query failed, using fallback:', firestoreError.message);
+
+          // Fallback to getting all available properties and filtering in memory
+          try {
+            const allSnapshot = await this.db.collection(this.collection)
+              .where('status', '==', 'available')
+              .limit(50)
+              .get();
+
+            if (!allSnapshot.empty) {
+              const allProperties = [];
+              allSnapshot.forEach(doc => {
+                allProperties.push({
+                  id: doc.id,
+                  ...doc.data()
+                });
+              });
+
+              properties = this.filterPropertiesInMemory(allProperties, searchCriteria);
+            }
+          } catch (fallbackError) {
+            logger.error('Fallback query also failed:', fallbackError.message);
+          }
         }
       } else {
         // Use mock database fallback
