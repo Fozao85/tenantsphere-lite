@@ -50,6 +50,15 @@ class WhatsAppService {
   // Send a message with buttons
   async sendButtonMessage(to, bodyText, buttons, headerText = null, footerText = null) {
     try {
+      // Validate button count (WhatsApp allows max 3 buttons)
+      if (!buttons || buttons.length === 0) {
+        throw new Error('At least 1 button is required');
+      }
+      if (buttons.length > 3) {
+        logger.warn(`Too many buttons (${buttons.length}), limiting to 3`);
+        buttons = buttons.slice(0, 3);
+      }
+
       const payload = {
         messaging_product: 'whatsapp',
         to: to,

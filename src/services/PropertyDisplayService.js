@@ -158,16 +158,19 @@ class PropertyDisplayService {
 
   // Get property action buttons
   getPropertyActionButtons(property) {
-    const buttons = [
-      { id: `book_${property.id}`, title: '📅 Book Tour' },
-      { id: `contact_${property.id}`, title: '📞 Contact Agent' },
-      { id: `save_${property.id}`, title: '💾 Save Property' }
-    ];
+    // WhatsApp allows maximum 3 buttons
+    const buttons = [];
 
-    // Add gallery button if multiple images
+    // Prioritize gallery if multiple images, otherwise book tour
     if (property.images && property.images.length > 1) {
-      buttons.unshift({ id: `gallery_${property.id}`, title: '📸 View Gallery' });
+      buttons.push({ id: `gallery_${property.id}`, title: '📸 View Gallery' });
+    } else {
+      buttons.push({ id: `book_${property.id}`, title: '📅 Book Tour' });
     }
+
+    // Always include contact and save
+    buttons.push({ id: `contact_${property.id}`, title: '👨‍💼 Contact Agent' });
+    buttons.push({ id: `save_${property.id}`, title: '💾 Save Property' });
 
     return buttons;
   }

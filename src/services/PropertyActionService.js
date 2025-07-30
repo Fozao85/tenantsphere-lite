@@ -63,8 +63,14 @@ class PropertyActionService {
       await this.trackPropertyInteraction(user.id, propertyId, action);
 
     } catch (error) {
-      logger.error('Error handling property action:', error);
-      await this.whatsapp.sendTextMessage(from, 
+      logger.error('Error handling property action:', {
+        message: error.message,
+        stack: error.stack,
+        actionId: actionId,
+        from: from,
+        userId: user?.id
+      });
+      await this.whatsapp.sendTextMessage(from,
         "Sorry, I encountered an error processing your request. Please try again."
       );
     }

@@ -70,7 +70,12 @@ class PreferenceLearningService {
       logger.info(`Updated preferences for user ${userId}`);
 
     } catch (error) {
-      logger.error('Error learning from interaction:', error);
+      logger.error('Error learning from interaction:', {
+        message: error.message,
+        stack: error.stack,
+        userId: userId,
+        interaction: interaction
+      });
     }
   }
 
