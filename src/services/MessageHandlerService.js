@@ -352,13 +352,41 @@ class MessageHandlerService {
       switch (buttonId) {
         // Welcome message property type selections
         case 'search_apartments':
-          await this.searchByPropertyType(user, conversation, 'apartment', from);
+          await this.showApartmentTypes(user, conversation, from);
           break;
         case 'search_houses':
-          await this.searchByPropertyType(user, conversation, 'house', from);
+          await this.showHouseTypes(user, conversation, from);
           break;
         case 'show_featured':
           await this.showFeaturedProperties(from);
+          break;
+
+        // Apartment type selections
+        case 'search_studio':
+          await this.searchByPropertyType(user, conversation, 'studio', from);
+          break;
+        case 'search_1bedroom':
+          await this.searchByPropertyType(user, conversation, '1 bedroom', from);
+          break;
+        case 'search_2bedroom_plus':
+          await this.searchByPropertyType(user, conversation, '2+ bedroom', from);
+          break;
+        case 'search_all_apartments':
+          await this.searchByPropertyType(user, conversation, 'apartment', from);
+          break;
+
+        // House type selections
+        case 'search_small_house':
+          await this.searchByPropertyType(user, conversation, 'small house', from);
+          break;
+        case 'search_family_house':
+          await this.searchByPropertyType(user, conversation, 'family house', from);
+          break;
+        case 'search_luxury_house':
+          await this.searchByPropertyType(user, conversation, 'luxury house', from);
+          break;
+        case 'search_all_houses':
+          await this.searchByPropertyType(user, conversation, 'house', from);
           break;
 
         // Search and browsing actions
@@ -831,11 +859,30 @@ What type of property are you looking for?`;
         `🏠 Great choice! Let me find ${propertyType}s for you...`
       );
 
+      // Map property types to database values
+      const propertyTypeMapping = {
+        'studio': 'studio',
+        '1 bedroom': 'apartment',
+        '2+ bedroom': 'apartment',
+        'apartment': 'apartment',
+        'small house': 'house',
+        'family house': 'house',
+        'luxury house': 'house',
+        'house': 'house'
+      };
+
       // Search for properties of the specified type
       const searchCriteria = {
-        propertyType: propertyType,
+        propertyType: propertyTypeMapping[propertyType.toLowerCase()] || propertyType,
         intent: 'search'
       };
+
+      // Add bedroom criteria for specific apartment types
+      if (propertyType === '1 bedroom') {
+        searchCriteria.bedrooms = { min: 1, max: 1 };
+      } else if (propertyType === '2+ bedroom') {
+        searchCriteria.bedrooms = { min: 2, max: 10 };
+      }
 
       const userPreferences = user.preferences || {};
       let properties = [];
@@ -878,6 +925,82 @@ What type of property are you looking for?`;
 
       // Fallback to featured properties
       await this.showFeaturedProperties(from);
+    }
+  }
+
+  // Show apartment type selection
+  async showApartmentTypes(user, conversation, from) {
+    try {
+      const message = `🏢 **What type of apartment are you looking for?**
+
+Choose from our available apartment types:
+
+🏠 **Studio** - Perfect for singles or couples
+🏠 **1 Bedroom** - Ideal for small families
+🏠 **2+ Bedrooms** - Great for larger families
+🔍 **All Apartments** - See everything we have
+
+What suits your needs?`;
+
+      const buttons = [
+        { id: 'search_studio', title: '🏠 Studio' },
+        { id: 'search_1bedroom', title: '🏠 1 Bedroom' },
+        { id: 'search_2bedroom_plus', title: '🏠 2+ Bedrooms' }
+      ];
+
+      await this.whatsapp.sendButtonMessage(from, message, buttons);
+
+      // Update conversation state
+      if (conversation) {
+        conversation.state = 'selecting_apartment_type';
+        await this.conversationService.updateConversation(conversation.id, {
+          state: 'selecting_apartment_type',
+          lastPropertyType: 'apartment'
+        });
+      }
+
+    } catch (error) {
+      logger.error('Error showing apartment types:', error);
+      // Fallback to direct apartment search
+      await this.searchByPropertyType(user, conversation, 'apartment', from);
+    }
+  }
+
+  // Show house type selection
+  async showHouseTypes(user, conversation, from) {
+    try {
+      const message = `🏠 **What type of house are you looking for?**
+
+Choose from our available house types:
+
+🏠 **Small House** - Cozy homes for small families
+🏠 **Family House** - Spacious homes with multiple rooms
+🏠 **Luxury House** - Premium houses with premium amenities
+🔍 **All Houses** - See everything we have
+
+What suits your needs?`;
+
+      const buttons = [
+        { id: 'search_small_house', title: '🏠 Small House' },
+        { id: 'search_family_house', title: '🏠 Family House' },
+        { id: 'search_luxury_house', title: '🏠 Luxury House' }
+      ];
+
+      await this.whatsapp.sendButtonMessage(from, message, buttons);
+
+      // Update conversation state
+      if (conversation) {
+        conversation.state = 'selecting_house_type';
+        await this.conversationService.updateConversation(conversation.id, {
+          state: 'selecting_house_type',
+          lastPropertyType: 'house'
+        });
+      }
+
+    } catch (error) {
+      logger.error('Error showing house types:', error);
+      // Fallback to direct house search
+      await this.searchByPropertyType(user, conversation, 'house', from);
     }
   }
 
