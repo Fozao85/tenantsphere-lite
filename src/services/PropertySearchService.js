@@ -12,32 +12,50 @@ class PropertySearchService extends DatabaseService {
     try {
       logger.info('Searching properties with criteria:', searchCriteria);
 
-      // Build query based on criteria
-      let query = this.db.collection(this.collection);
+      let properties = [];
 
-      // Apply filters
-      query = this.applyLocationFilter(query, searchCriteria.location);
-      query = this.applyPriceFilter(query, searchCriteria.priceRange);
-      query = this.applyPropertyTypeFilter(query, searchCriteria.propertyType);
-      query = this.applyBedroomFilter(query, searchCriteria.bedrooms);
-      query = this.applyAmenitiesFilter(query, searchCriteria.amenities);
-      query = this.applyAvailabilityFilter(query, searchCriteria.availability);
+      if (this.isAvailable) {
+        // Use Firestore for real database
+        logger.info('Using Firestore database for search');
 
-      // Execute query
-      const snapshot = await query.limit(20).get();
-      
-      if (snapshot.empty) {
+        // Build query based on criteria
+        let query = this.db.collection(this.collection);
+
+        // Apply filters
+        query = this.applyLocationFilter(query, searchCriteria.location);
+        query = this.applyPriceFilter(query, searchCriteria.priceRange);
+        query = this.applyPropertyTypeFilter(query, searchCriteria.propertyType);
+        query = this.applyBedroomFilter(query, searchCriteria.bedrooms);
+        query = this.applyAmenitiesFilter(query, searchCriteria.amenities);
+        query = this.applyAvailabilityFilter(query, searchCriteria.availability);
+
+        // Execute query
+        const snapshot = await query.limit(20).get();
+
+        if (!snapshot.empty) {
+          snapshot.forEach(doc => {
+            properties.push({
+              id: doc.id,
+              ...doc.data()
+            });
+          });
+        }
+      } else {
+        // Use mock database fallback
+        logger.info('Using mock database for search');
+
+        // Get all properties from mock database
+        const allProperties = await this.getAll(this.collection);
+        logger.info(`Retrieved ${allProperties.length} properties from mock database`);
+
+        // Apply filters in memory
+        properties = this.filterPropertiesInMemory(allProperties, searchCriteria);
+      }
+
+      if (properties.length === 0) {
         logger.info('No properties found matching criteria');
         return [];
       }
-
-      const properties = [];
-      snapshot.forEach(doc => {
-        properties.push({
-          id: doc.id,
-          ...doc.data()
-        });
-      });
 
       // Apply intelligent ranking
       const rankedProperties = this.rankProperties(properties, searchCriteria, userPreferences);
@@ -55,10 +73,9 @@ class PropertySearchService extends DatabaseService {
   applyLocationFilter(query, location) {
     if (!location) return query;
 
-    const locationTerms = location.toLowerCase().split(' ');
-    
-    // Search in multiple location fields
-    return query.where('searchableLocation', 'array-contains-any', locationTerms);
+    // Use location_keywords array for searching
+    const locationTerm = location.toLowerCase();
+    return query.where('location_keywords', 'array-contains', locationTerm);
   }
 
   // Apply price range filtering
@@ -81,9 +98,9 @@ class PropertySearchService extends DatabaseService {
     if (!propertyType || propertyType.length === 0) return query;
 
     if (Array.isArray(propertyType)) {
-      return query.where('type', 'in', propertyType);
+      return query.where('propertyType', 'in', propertyType);
     } else {
-      return query.where('type', '==', propertyType);
+      return query.where('propertyType', '==', propertyType);
     }
   }
 
@@ -112,7 +129,8 @@ class PropertySearchService extends DatabaseService {
 
   // Apply availability filtering
   applyAvailabilityFilter(query, availability = true) {
-    return query.where('isAvailable', '==', availability);
+    // Default to showing only available properties
+    return query.where('status', '==', 'available');
   }
 
   // Intelligent property ranking based on user preferences and criteria
@@ -301,6 +319,60 @@ class PropertySearchService extends DatabaseService {
       logger.error('Error getting featured properties:', error);
       throw error;
     }
+  }
+  // Filter properties in memory (for mock database)
+  filterPropertiesInMemory(properties, searchCriteria) {
+    logger.info(`Filtering ${properties.length} properties in memory with criteria:`, searchCriteria);
+
+    return properties.filter(property => {
+      // Location filter
+      if (searchCriteria.location) {
+        const location = property.location?.toLowerCase() || '';
+        const searchLocation = searchCriteria.location.toLowerCase();
+        if (!location.includes(searchLocation)) {
+          return false;
+        }
+      }
+
+      // Property type filter
+      if (searchCriteria.propertyType) {
+        const propertyType = property.propertyType?.toLowerCase() || '';
+        const searchType = searchCriteria.propertyType.toLowerCase();
+        if (propertyType !== searchType) {
+          return false;
+        }
+      }
+
+      // Price range filter
+      if (searchCriteria.priceRange) {
+        const price = property.price || 0;
+        if (searchCriteria.priceRange.min && price < searchCriteria.priceRange.min) {
+          return false;
+        }
+        if (searchCriteria.priceRange.max && price > searchCriteria.priceRange.max) {
+          return false;
+        }
+      }
+
+      // Bedroom filter
+      if (searchCriteria.bedrooms) {
+        const bedrooms = property.bedrooms || 0;
+        if (searchCriteria.bedrooms.min && bedrooms < searchCriteria.bedrooms.min) {
+          return false;
+        }
+        if (searchCriteria.bedrooms.max && bedrooms > searchCriteria.bedrooms.max) {
+          return false;
+        }
+      }
+
+      // Status filter (default to available)
+      const status = property.status || 'available';
+      if (status !== 'available') {
+        return false;
+      }
+
+      return true;
+    });
   }
 }
 

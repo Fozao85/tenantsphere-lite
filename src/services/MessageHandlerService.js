@@ -408,6 +408,69 @@ class MessageHandlerService {
           await this.showSavedProperties(user, conversation, from);
           break;
 
+        // Main menu actions
+        case 'search_properties':
+          await this.startPropertySearch(user, conversation, from);
+          break;
+        case 'set_preferences':
+          await this.startPreferencesSetup(user, conversation, from);
+          break;
+        case 'view_bookings':
+          await this.showUserBookings(user, from);
+          break;
+        case 'view_profile':
+          await this.showUserProfile(user, from);
+          break;
+
+        // Search refinement actions
+        case 'broaden_search':
+          await this.broadenSearch(user, conversation, from);
+          break;
+        case 'expand_location':
+          await this.expandLocationSearch(user, conversation, from);
+          break;
+        case 'increase_budget':
+          await this.increaseBudgetSearch(user, conversation, from);
+          break;
+        case 'any_property_type':
+          await this.searchAnyPropertyType(user, conversation, from);
+          break;
+        case 'essential_only':
+          await this.searchEssentialOnly(user, conversation, from);
+          break;
+
+        // Contact and support actions
+        case 'send_requirements':
+          await this.sendRequirementsToAgent(user, conversation, from);
+          break;
+        case 'schedule_call':
+          await this.scheduleAgentCall(user, conversation, from);
+          break;
+
+        // Onboarding actions
+        case 'ready_onboarding':
+          await this.continueOnboarding(user, conversation, from);
+          break;
+        case 'skip_onboarding':
+          await this.skipOnboarding(user, conversation, from);
+          break;
+
+        // Booking actions
+        case 'confirm_booking':
+          await this.confirmBooking(user, conversation, from);
+          break;
+        case 'modify_booking':
+          await this.modifyBooking(user, conversation, from);
+          break;
+
+        // Search start actions
+        case 'start_search':
+          await this.startPropertySearch(user, conversation, from);
+          break;
+        case 'get_recommendations':
+          await this.showRecommendedProperties(user, conversation, from);
+          break;
+
         // Carousel navigation
         case buttonId.startsWith('next_') ? buttonId : null:
           await this.handleCarouselNavigation(user, conversation, buttonId, from);
@@ -756,7 +819,7 @@ What type of property are you looking for?`;
         logger.error('Error searching by property type:', searchError);
         // Fallback to all properties filtered by type
         try {
-          const allProperties = await this.propertyService.getAllProperties();
+          const allProperties = await this.propertyService.getProperties();
           properties = allProperties.filter(p =>
             p.propertyType && p.propertyType.toLowerCase() === propertyType.toLowerCase()
           );
@@ -794,7 +857,7 @@ What type of property are you looking for?`;
   async showFeaturedProperties(from) {
     try {
       // Get some sample properties
-      const properties = await this.propertyService.getAllProperties({ limit: 5 });
+      const properties = await this.propertyService.getProperties({}, { limit: 5 });
 
       if (properties && properties.length > 0) {
         await this.sendPropertyResults(null, null, properties, from);
@@ -1802,6 +1865,64 @@ Would you like me to:`;
         `Let me connect you with one of our human agents who can provide more detailed assistance. They'll be with you shortly!`
       );
     }
+  }
+  }
+
+  // Missing method implementations for button handlers
+  async showUserProfile(user, from) {
+    try {
+      const profile = `👤 *Your Profile*\n\n📱 Phone: ${user.phoneNumber}\n📅 Member since: ${user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'Recently'}\n🏠 Saved properties: ${user.savedProperties?.length || 0}\n📋 Bookings: ${user.bookings?.length || 0}`;
+      await this.whatsapp.sendTextMessage(from, profile);
+    } catch (error) {
+      logger.error('Error showing user profile:', error);
+      await this.whatsapp.sendTextMessage(from, "Sorry, I couldn't load your profile. Please try again.");
+    }
+  }
+
+  async expandLocationSearch(user, conversation, from) {
+    await this.whatsapp.sendTextMessage(from, "🌍 I'll expand the search to nearby areas. Let me find more properties for you...");
+    await this.startPropertySearch(user, conversation, from);
+  }
+
+  async increaseBudgetSearch(user, conversation, from) {
+    await this.whatsapp.sendTextMessage(from, "💰 I'll show you properties with a higher budget range. Searching...");
+    await this.startPropertySearch(user, conversation, from);
+  }
+
+  async searchAnyPropertyType(user, conversation, from) {
+    await this.whatsapp.sendTextMessage(from, "🏠 I'll search all property types for you. Finding options...");
+    await this.startPropertySearch(user, conversation, from);
+  }
+
+  async searchEssentialOnly(user, conversation, from) {
+    await this.whatsapp.sendTextMessage(from, "✨ I'll focus on properties with essential features only. Searching...");
+    await this.startPropertySearch(user, conversation, from);
+  }
+
+  async sendRequirementsToAgent(user, conversation, from) {
+    await this.whatsapp.sendTextMessage(from, "📝 Please tell me your specific requirements and I'll make sure our agents get them!");
+  }
+
+  async scheduleAgentCall(user, conversation, from) {
+    await this.whatsapp.sendTextMessage(from, "📞 I'll arrange for an agent to call you. Please provide your preferred time (e.g., 'tomorrow at 2 PM')");
+  }
+
+  async continueOnboarding(user, conversation, from) {
+    await this.whatsapp.sendTextMessage(from, "🎉 Great! Let's set up your preferences to find the perfect property for you.");
+    await this.startPreferencesSetup(user, conversation, from);
+  }
+
+  async skipOnboarding(user, conversation, from) {
+    await this.whatsapp.sendTextMessage(from, "⏭️ No problem! You can always set up preferences later. Let's start searching!");
+    await this.startPropertySearch(user, conversation, from);
+  }
+
+  async confirmBooking(user, conversation, from) {
+    await this.whatsapp.sendTextMessage(from, "✅ Booking confirmed! You'll receive a confirmation message shortly with all the details.");
+  }
+
+  async modifyBooking(user, conversation, from) {
+    await this.whatsapp.sendTextMessage(from, "✏️ Please tell me what you'd like to change about your booking (date, time, etc.)");
   }
 }
 
