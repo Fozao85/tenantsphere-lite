@@ -1866,7 +1866,6 @@ Would you like me to:`;
       );
     }
   }
-  }
 
   // Missing method implementations for button handlers
   async showUserProfile(user, from) {
