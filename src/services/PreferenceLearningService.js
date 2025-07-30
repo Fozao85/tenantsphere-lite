@@ -26,6 +26,17 @@ class PreferenceLearningService {
   // Learn from user interaction and update preferences
   async learnFromInteraction(userId, interaction) {
     try {
+      // Validate input parameters
+      if (!userId) {
+        logger.warn('No userId provided for preference learning');
+        return;
+      }
+
+      if (!interaction || !interaction.action) {
+        logger.warn('Invalid interaction data for preference learning:', interaction);
+        return;
+      }
+
       logger.info(`Learning from interaction: ${interaction.action} by user ${userId}`);
 
       const user = await this.userService.getUserById(userId);

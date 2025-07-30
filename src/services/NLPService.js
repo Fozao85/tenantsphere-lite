@@ -60,6 +60,80 @@ class NLPService {
     };
   }
 
+  // Analyze user intent from message text
+  async analyzeIntent(messageText) {
+    try {
+      if (!messageText || typeof messageText !== 'string') {
+        return { intent: 'unknown', confidence: 0 };
+      }
+
+      const text = messageText.toLowerCase().trim();
+
+      // Greeting intents
+      if (this.isGreeting(text)) {
+        return { intent: 'greeting', confidence: 0.9 };
+      }
+
+      // Search intents
+      if (this.isPropertySearch(text)) {
+        return { intent: 'property_search', confidence: 0.8 };
+      }
+
+      // Help intents
+      if (this.isHelpRequest(text)) {
+        return { intent: 'help', confidence: 0.8 };
+      }
+
+      // Contact intents
+      if (this.isContactRequest(text)) {
+        return { intent: 'contact', confidence: 0.8 };
+      }
+
+      // Default to property search for most messages
+      return { intent: 'property_search', confidence: 0.5 };
+
+    } catch (error) {
+      logger.error('Error analyzing intent:', error);
+      return { intent: 'property_search', confidence: 0.3 };
+    }
+  }
+
+  // Check if message is a greeting
+  isGreeting(text) {
+    const greetings = ['hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening', 'start', 'begin'];
+    return greetings.some(greeting => text.includes(greeting));
+  }
+
+  // Check if message is a property search
+  isPropertySearch(text) {
+    // Check for property types
+    const hasPropertyType = Object.values(this.propertyTypes).flat().some(type => text.includes(type));
+
+    // Check for locations
+    const hasLocation = Object.values(this.locations).flat().some(location => text.includes(location));
+
+    // Check for price mentions
+    const hasPrice = /\d+/.test(text) || Object.keys(this.priceKeywords).some(keyword => text.includes(keyword));
+
+    // Check for search keywords
+    const searchKeywords = ['find', 'search', 'looking for', 'want', 'need', 'show me', 'available'];
+    const hasSearchKeyword = searchKeywords.some(keyword => text.includes(keyword));
+
+    return hasPropertyType || hasLocation || hasPrice || hasSearchKeyword;
+  }
+
+  // Check if message is a help request
+  isHelpRequest(text) {
+    const helpKeywords = ['help', 'assist', 'support', 'how', 'what can you do', 'commands'];
+    return helpKeywords.some(keyword => text.includes(keyword));
+  }
+
+  // Check if message is a contact request
+  isContactRequest(text) {
+    const contactKeywords = ['contact', 'agent', 'call', 'phone', 'speak to', 'talk to', 'human'];
+    return contactKeywords.some(keyword => text.includes(keyword));
+  }
+
   // Main method to parse user query into search criteria
   parseUserQuery(query) {
     try {

@@ -26,7 +26,7 @@ class PropertyActionService {
       }
 
       // Get property details
-      const property = await this.propertyService.getPropertyById(propertyId);
+      const property = await this.propertyService.getProperty(propertyId);
       if (!property) {
         await this.whatsapp.sendTextMessage(from, "Property not found. It may have been removed or is no longer available.");
         return;
