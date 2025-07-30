@@ -104,6 +104,7 @@ Thumbs.db
 firebase-debug.log
 firebase-debug.*.log
 .firebase/
+src/config/firebase-service-account.json
 
 # Local development
 uploads/
