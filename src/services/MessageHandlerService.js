@@ -388,7 +388,7 @@ class MessageHandlerService {
           await this.showHouseTypes(user, conversation, from);
           break;
         case 'show_featured':
-          await this.showFeaturedProperties(from);
+          await this.showFeaturedProperties(user, conversation, from);
           break;
 
         // Apartment type selections
@@ -795,7 +795,7 @@ What would you like to do?`;
           await this.whatsapp.sendTextMessage(from,
             "I'm having trouble searching right now. Let me show you some featured properties instead!"
           );
-          await this.showFeaturedProperties(from);
+          await this.showFeaturedProperties(user, conversation, from);
           return;
         }
       }
@@ -822,7 +822,7 @@ What would you like to do?`;
 
       // Try to show some properties as fallback
       try {
-        await this.showFeaturedProperties(from);
+        await this.showFeaturedProperties(user, conversation, from);
       } catch (fallbackError) {
         logger.error('Even fallback failed:', fallbackError);
         await this.whatsapp.sendTextMessage(from,
@@ -954,7 +954,7 @@ What type of property are you looking for?`;
       );
 
       // Fallback to featured properties
-      await this.showFeaturedProperties(from);
+      await this.showFeaturedProperties(user, conversation, from);
     }
   }
 
@@ -1034,26 +1034,7 @@ What suits your needs?`;
     }
   }
 
-  // Show featured properties
-  async showFeaturedProperties(from) {
-    try {
-      // Get some sample properties
-      const properties = await this.propertyService.getProperties({}, { limit: 5 });
 
-      if (properties && properties.length > 0) {
-        await this.sendPropertyResults(null, null, properties, from);
-      } else {
-        await this.whatsapp.sendTextMessage(from,
-          "I don't have any properties to show right now. Please check back later or contact our support team."
-        );
-      }
-    } catch (error) {
-      logger.error('Error showing featured properties:', error);
-      await this.whatsapp.sendTextMessage(from,
-        "I'm having trouble loading properties right now. Please try again later."
-      );
-    }
-  }
 
   // Handle no search results
   async handleNoResults(user, conversation, messageText, from, searchCriteria) {
